@@ -2,6 +2,7 @@ import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   onAuthStateChanged,
+  signInWithRedirect,
   signInWithPopup,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
@@ -106,6 +107,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async signInWithGoogle() {
         const provider = new GoogleAuthProvider()
         provider.setCustomParameters({ prompt: 'select_account' })
+
+        const isMobileDevice =
+          /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+          window.matchMedia('(pointer: coarse)').matches
+
+        if (isMobileDevice) {
+          await signInWithRedirect(auth, provider)
+          return
+        }
+
         const credential = await signInWithPopup(auth, provider)
         const profileRef = doc(db, 'users', credential.user.uid)
         const profile = await getDoc(profileRef)

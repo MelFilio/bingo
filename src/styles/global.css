@@ -273,7 +273,7 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: 0.68; }
 .winner-banner h1 { margin: 0; font-family: 'Manrope', sans-serif; font-size: clamp(22px, 4vw, 32px); letter-spacing: -.04em; }
 .winner-banner .button { margin-left: auto; white-space: nowrap; }
 .restart-round-button { justify-self: center; margin-top: 4px; color: var(--danger); }
-.game-header { display: flex; align-items: center; justify-content: space-between; gap: 40px; margin-bottom: 34px; }
+.game-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 40px; margin-bottom: 34px; }
 .game-header h1 { margin: 0; font-family: 'Manrope', sans-serif; font-size: clamp(38px, 6vw, 58px); letter-spacing: -.055em; }
 .game-header > div:first-child > p:last-child { margin: 10px 0 0; color: var(--muted); }
 .current-call { display: grid; min-width: 180px; justify-items: center; padding: 18px 24px; border-radius: var(--radius-md); color: #eff7eb; background: var(--primary); }
@@ -281,6 +281,9 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: 0.68; }
 .current-call.is-paused span, .current-call.is-paused small { color: #715e32; }
 .current-call span, .current-call small { color: #c5d8cc; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .current-call strong { margin: 2px 0; font-family: 'Manrope', sans-serif; font-size: 42px; letter-spacing: -.04em; }
+.call-summary { width: 280px; }
+.recent-call-strip { margin-top: 10px; }
+.recent-call-strip > span { display: block; margin-bottom: 7px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .game-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .55fr); align-items: start; gap: 22px; }
 .bingo-card-panel, .caller-panel { padding: 28px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: 0 8px 32px rgba(33,54,42,.05); }
 .game-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 24px; }
@@ -298,7 +301,7 @@ button.bingo-cell:hover:not(:disabled) { border-color: var(--focus); transform: 
 .bingo-grid--compact .bingo-grid__letter { height: 24px; font-size: 14px; }
 .bingo-grid--compact .bingo-cell { border-radius: 5px; font-size: 10px; }
 .bingo-grid--compact .bingo-cell.is-free { font-size: 6px; }
-.active-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 30px; }
+.active-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 520px)); justify-content: center; gap: 30px; }
 .marking-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: -4px 0 22px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fafcf9; }
 .marking-toolbar .live-call-controls { min-width: 250px; }
 .wrong-mark-status { margin: 0; color: #35614c; font-size: 12px; font-weight: 700; }
@@ -321,10 +324,8 @@ button.bingo-cell:hover:not(:disabled) { border-color: var(--focus); transform: 
 .history-winners span { color: var(--muted); font-size: 10px !important; letter-spacing: .1em; text-transform: uppercase; }
 .history-winners strong { overflow-wrap: anywhere; color: var(--primary); }
 .claim-help, .card-unavailable { margin: 16px 0 0; color: var(--muted); font-size: 13px; text-align: center; }
-.recent-calls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0; padding: 0; list-style: none; }
-.recent-calls li { display: grid; aspect-ratio: 1; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--muted); background: var(--surface-soft); font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 800; }
-.recent-calls li.is-current { color: #fff; border-color: var(--primary); background: var(--primary); }
-.no-calls { display: grid; min-height: 130px; place-items: center; margin: 0; color: var(--muted); font-size: 13px; }
+.recent-calls { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.recent-calls li { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--primary); background: var(--surface); font-family: 'Manrope', sans-serif; font-size: 10px; font-weight: 800; box-shadow: 0 1px 3px rgba(33,54,42,.06); }
 .caller-controls { display: grid; gap: 10px; margin-top: 24px; }
 .live-call-controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; padding: 4px; border-radius: 10px; background: var(--surface-soft); }
 .live-call-controls button { min-height: 36px; padding: 5px 8px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; font-size: 12px; font-weight: 700; }
@@ -354,6 +355,12 @@ button.bingo-cell:hover:not(:disabled) { border-color: var(--focus); transform: 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(.98); } }
 
+@media (max-width: 1024px) {
+  .room-page { width: min(100% - 48px, 900px); padding-block: 48px; }
+  .lobby-layout, .game-layout { grid-template-columns: 1fr; }
+  .bingo-card-panel { padding: 24px; }
+}
+
 @media (max-width: 800px) {
   .auth-layout { display: block; }
   .auth-story { display: none; }
@@ -367,9 +374,8 @@ button.bingo-cell:hover:not(:disabled) { border-color: var(--focus); transform: 
   .overview-card--feature { grid-column: auto; }
   .room-hero { align-items: stretch; flex-direction: column; }
   .room-code-card { align-self: flex-start; }
-  .lobby-layout, .game-layout { grid-template-columns: 1fr; }
-  .game-header { align-items: stretch; flex-direction: column; }
-  .current-call { align-self: flex-start; }
+  .game-header { grid-template-columns: 1fr; gap: 24px; }
+  .call-summary { width: min(100%, 360px); }
 }
 
 @media (max-width: 480px) {
@@ -394,6 +400,9 @@ button.bingo-cell:hover:not(:disabled) { border-color: var(--focus); transform: 
   .marking-toolbar .live-call-controls { min-width: 0; }
   .next-game-waiting { align-items: flex-start; flex-direction: column; }
   .bingo-card-panel, .caller-panel { padding: 20px; }
+  .current-call { min-width: 0; padding: 14px 20px; }
+  .current-call strong { font-size: 36px; }
+  .recent-calls li { width: 32px; height: 32px; font-size: 9px; }
   .bingo-grid { gap: 4px; }
   .bingo-cell { border-radius: 7px; }
   .winner-banner { align-items: flex-start; padding: 20px; }

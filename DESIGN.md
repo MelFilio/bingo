@@ -138,7 +138,7 @@ Use a 4px base scale:
   scrolling. Data tables may use a labeled, contained scrolling region.
 - At 200% browser zoom, preserve content and functionality.
 
-## Component standards
+## Component standard
 
 Every interactive component must define its default, hover, active, focus,
 disabled, loading, error, and success states where applicable.
