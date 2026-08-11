@@ -749,7 +749,7 @@ function GameBoard({
   onMarkModeChange,
   onCellToggle,
 }: GameBoardProps) {
-  const recentCalls = [...room.calledNumbers].reverse().slice(0, 8)
+  const recentCalls = [...room.calledNumbers].reverse().slice(1, 9)
   const wrongMarks =
     markMode === 'manual'
       ? manualMarks.filter(
@@ -789,16 +789,28 @@ function GameBoard({
           <h1>{room.status === 'playing' ? 'Bingo is live' : 'Round complete'}</h1>
           <p>{patternLabels[room.settings.winPattern]} wins this round.</p>
         </div>
-        <div
-          className={`current-call${room.callingPaused ? ' is-paused' : ''}`}
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          <span>Current call</span>
-          <strong>{room.currentNumber ? getBallLabel(room.currentNumber) : '—'}</strong>
-          <small>
-            {room.callingPaused ? 'Calling paused' : `${room.calledNumbers.length} of 75 called`}
-          </small>
+        <div className="call-summary">
+          <div
+            className={`current-call${room.callingPaused ? ' is-paused' : ''}`}
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <span>Current call</span>
+            <strong>{room.currentNumber ? getBallLabel(room.currentNumber) : '—'}</strong>
+            <small>
+              {room.callingPaused ? 'Calling paused' : `${room.calledNumbers.length} of 75 called`}
+            </small>
+          </div>
+          {recentCalls.length > 0 && (
+            <div className="recent-call-strip">
+              <span>Recent</span>
+              <ol className="recent-calls" aria-label="Previous calls">
+                {recentCalls.map((number) => (
+                  <li key={number}>{getBallLabel(number)}</li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
       </section>
 
@@ -894,22 +906,10 @@ function GameBoard({
         <aside className="caller-panel">
           <div className="game-panel-heading">
             <div>
-              <p className="eyebrow">Number board</p>
-              <h2>Recent calls</h2>
+              <p className="eyebrow">Game details</p>
+              <h2>{isHost && room.status === 'playing' ? 'Call controls' : 'Players'}</h2>
             </div>
           </div>
-
-          {recentCalls.length ? (
-            <ol className="recent-calls">
-              {recentCalls.map((number, index) => (
-                <li key={number} className={index === 0 ? 'is-current' : ''}>
-                  {getBallLabel(number)}
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="no-calls">No numbers called yet.</p>
-          )}
 
           {isHost && room.status === 'playing' && (
             <div className="caller-controls">

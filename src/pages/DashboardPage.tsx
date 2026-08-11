@@ -150,16 +150,16 @@ export function DashboardPage({ onOpenRoom }: { onOpenRoom: (code: string) => vo
       <main className="dashboard">
         <section className="welcome" aria-labelledby="welcome-title">
           <div>
-            <p className="eyebrow">Workspace</p>
-            <h1 id="welcome-title">Good to see you, {username}.</h1>
-            <p>Your secure Firebase workspace is ready for what comes next.</p>
+            <p className="eyebrow">Bingo lobby</p>
+            <h1 id="welcome-title">Ready to play, {username}?</h1>
+            <p>Host a new game or enter a room code to join your friends.</p>
           </div>
           <span className="status-pill">
             <span aria-hidden="true" /> Connected
           </span>
         </section>
 
-        <section className="dashboard-grid" aria-label="Account overview">
+        <section className="dashboard-grid" aria-label="Game options">
           <article className="room-action-card room-action-card--create">
             <div>
               <p className="card-label">Host a game</p>
@@ -216,11 +216,11 @@ export function DashboardPage({ onOpenRoom }: { onOpenRoom: (code: string) => vo
           <article className="overview-card overview-card--feature">
             <div className="card-icon" aria-hidden="true">✓</div>
             <div>
-              <p className="card-label">Account status</p>
-              <h2>You’re all set</h2>
+              <p className="card-label">Player status</p>
+              <h2>Ready for the next game</h2>
               <p>
-                Authentication is active and your profile is stored privately
-                in Cloud Firestore.
+                Your player profile is saved, so your username will follow you
+                into every room.
               </p>
             </div>
           </article>
@@ -300,9 +300,9 @@ export function DashboardPage({ onOpenRoom }: { onOpenRoom: (code: string) => vo
           </article>
 
           <article className="overview-card">
-            <p className="card-label">Security</p>
-            <h2>Private by default</h2>
-            <p>Firestore rules limit your profile data to your account.</p>
+            <p className="card-label">Fair play</p>
+            <h2>Your card, your game</h2>
+            <p>Your account keeps your player identity and game access protected.</p>
           </article>
         </section>
       </main>

@@ -70,18 +70,18 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
       <section className="auth-story" aria-labelledby="story-title">
         <Logo />
         <div className="auth-story__content">
-          <p className="eyebrow">Your focused workspace</p>
-          <h1 id="story-title">Make room for what matters.</h1>
+          <p className="eyebrow">Multiplayer Bingo</p>
+          <h1 id="story-title">Call. Mark. Bingo!</h1>
           <p>
-            A calm place to organize your day, keep momentum, and celebrate
-            every win—big or small.
+            Create a room, invite your friends, and race to complete your
+            winning pattern.
           </p>
         </div>
         <figure className="quote">
           <blockquote>
-            “Simplicity is the soul of efficiency.”
+            “Every number could be the one.”
           </blockquote>
-          <figcaption>— Austin Freeman</figcaption>
+          <figcaption>Get your card ready</figcaption>
         </figure>
         <div className="story-orb story-orb--one" aria-hidden="true" />
         <div className="story-orb story-orb--two" aria-hidden="true" />
@@ -99,8 +99,8 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
             </h2>
             <p>
               {isSignUp
-                ? 'One account, a clearer path forward.'
-                : 'Pick up exactly where you left off.'}
+                ? 'Choose your player name and join the fun.'
+                : 'Sign in to host a room or join the next game.'}
             </p>
           </div>
 
@@ -214,7 +214,7 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
           </p>
         </div>
         <p className="legal-copy">
-          By continuing, you agree to use Bingo thoughtfully and securely.
+          Play fair, have fun, and be ready to shout Bingo.
         </p>
       </section>
     </main>
