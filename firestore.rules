@@ -1,0 +1,225 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow create: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.keys().hasOnly([
+                      'displayName', 'email', 'createdAt', 'updatedAt'
+                    ]);
+      allow read, delete: if request.auth != null
+                          && request.auth.uid == userId;
+      allow update: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['displayName', 'email', 'username',
+                                'usernameLower', 'updatedAt'])
+                    && (!resource.data.keys().hasAny(['username', 'usernameLower'])
+                        || request.resource.data.keys().hasAll([
+                          'username', 'usernameLower'
+                        ]))
+                    && (!request.resource.data.keys().hasAny([
+                          'username', 'usernameLower'
+                        ])
+                        || request.resource.data.keys().hasAll([
+                          'username', 'usernameLower'
+                        ]))
+                    && (!request.resource.data.keys().hasAny(['username'])
+                        || (request.resource.data.username is string
+                            && request.resource.data.username
+                              .matches('^[A-Za-z0-9_]{3,20}$')))
+                    && (!request.resource.data.keys().hasAny(['usernameLower'])
+                        || (request.resource.data.usernameLower is string
+                            && request.resource.data.usernameLower
+                              .matches('^[a-z0-9_]{3,20}$')))
+                    && (!request.resource.data.keys().hasAll([
+                          'username', 'usernameLower'
+                        ])
+                        || (existsAfter(/databases/$(database)/documents/usernames/$(request.resource.data.usernameLower))
+                            && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.usernameLower)).data.uid
+                               == request.auth.uid
+                            && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.usernameLower)).data.username
+                               == request.resource.data.username));
+    }
+
+    match /usernames/{username} {
+      allow create: if request.auth != null
+                    && !exists(/databases/$(database)/documents/usernames/$(username))
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.keys().hasOnly([
+                      'uid', 'username', 'createdAt'
+                    ])
+                    && username.matches('^[a-z0-9_]{3,20}$')
+                    && request.resource.data.username is string
+                    && request.resource.data.username
+                      .matches('^[A-Za-z0-9_]{3,20}$');
+      allow read: if request.auth != null;
+      allow delete: if request.auth != null
+                    && resource.data.uid == request.auth.uid
+                    && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.usernameLower
+                       != username;
+      allow update: if false;
+    }
+
+    match /rooms/{roomCode} {
+      function validSettings(settings) {
+        return settings.keys().hasOnly([
+                 'winPattern', 'callMode', 'callInterval',
+                 'cardCount', 'customPattern'
+               ])
+               && settings.winPattern in [
+                 'line', 'four-corners', 'full-card', 'custom'
+               ]
+               && settings.callMode in ['manual', 'automatic']
+               && settings.callInterval in [5, 10, 15]
+               && settings.cardCount in [1, 2, 3]
+               && settings.customPattern is list
+               && settings.customPattern.size() == 25;
+      }
+
+      function validCards(cards, count) {
+        return cards is list
+               && cards.size() == count
+               && cards[0] is map
+               && cards[0].keys().hasOnly(['cells'])
+               && cards[0].cells is list
+               && cards[0].cells.size() == 25
+               && (count < 2
+                   || (cards[1] is map
+                       && cards[1].keys().hasOnly(['cells'])
+                       && cards[1].cells is list
+                       && cards[1].cells.size() == 25))
+               && (count < 3
+                   || (cards[2] is map
+                       && cards[2].keys().hasOnly(['cells'])
+                       && cards[2].cells is list
+                       && cards[2].cells.size() == 25));
+      }
+
+      allow create: if request.auth != null
+                    && roomCode.matches('^[A-HJ-NP-Z2-9]{6}$')
+                    && request.resource.data.keys().hasOnly([
+                      'code', 'hostUid', 'hostUsername', 'status',
+                      'settings', 'calledNumbers', 'currentNumber',
+                      'callingPaused', 'winnerUid', 'winnerUsername',
+                      'winners', 'roundNumber', 'createdAt', 'updatedAt'
+                    ])
+                    && request.resource.data.code == roomCode
+                    && request.resource.data.hostUid == request.auth.uid
+                    && request.resource.data.status == 'waiting'
+                    && validSettings(request.resource.data.settings)
+                    && request.resource.data.calledNumbers.size() == 0
+                    && request.resource.data.currentNumber == null
+                    && request.resource.data.callingPaused == false
+                    && request.resource.data.winnerUid == null
+                    && request.resource.data.winnerUsername == null
+                    && request.resource.data.winners is list
+                    && request.resource.data.winners.size() == 0
+                    && request.resource.data.roundNumber == 1
+                    && request.resource.data.hostUsername
+                       == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username;
+      allow read: if request.auth != null;
+      allow update: if request.auth != null
+                    && (
+                      (resource.data.hostUid == request.auth.uid
+                       && validSettings(request.resource.data.settings)
+                       && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['settings', 'status', 'calledNumbers',
+                                   'currentNumber', 'callingPaused', 'winnerUid',
+                                   'winnerUsername', 'winners', 'roundNumber',
+                                   'startedAt', 'finishedAt', 'updatedAt']))
+                      ||
+                      (resource.data.status == 'playing'
+                       && request.resource.data.status == 'finished'
+                       && request.resource.data.winnerUid == request.auth.uid
+                       && request.resource.data.winnerUsername
+                          == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username
+                       && exists(/databases/$(database)/documents/rooms/$(roomCode)/players/$(request.auth.uid))
+                       && request.resource.data.winners is list
+                       && request.resource.data.winners.size() > 0
+                       && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['status', 'winnerUid', 'winnerUsername',
+                                   'winners', 'finishedAt', 'updatedAt']))
+                    );
+      allow delete: if request.auth != null
+                    && resource.data.hostUid == request.auth.uid;
+
+      match /players/{playerId} {
+        allow create: if request.auth != null
+                      && playerId == request.auth.uid
+                      && request.resource.data.keys().hasOnly([
+                        'uid', 'username', 'status', 'cards', 'joinedAt'
+                      ])
+                      && request.resource.data.uid == request.auth.uid
+                      && request.resource.data.username
+                         == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username
+                      && (
+                        (getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.status
+                           == 'waiting'
+                         && request.resource.data.status == 'active')
+                        ||
+                        (getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.status
+                           in ['playing', 'finished']
+                         && request.resource.data.status == 'waiting')
+                      )
+                      && validCards(
+                           request.resource.data.cards,
+                           getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.settings.cardCount
+                         )
+                      ;
+        allow read: if request.auth != null
+                    && (playerId == request.auth.uid
+                        || exists(/databases/$(database)/documents/rooms/$(roomCode)/players/$(request.auth.uid)));
+        allow delete: if request.auth != null
+                      && (playerId == request.auth.uid
+                          || get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid
+                             == request.auth.uid);
+        allow update: if request.auth != null
+                      && (
+                        (playerId == request.auth.uid
+                         && (
+                        (get(/databases/$(database)/documents/rooms/$(roomCode)).data.status
+                           == 'waiting'
+                         && request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['cards'])
+                         && validCards(
+                              request.resource.data.cards,
+                              get(/databases/$(database)/documents/rooms/$(roomCode)).data.settings.cardCount
+                            ))
+                         ))
+                        ||
+                        (getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid
+                           == request.auth.uid
+                         && getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.status
+                           == 'waiting'
+                         && request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['status'])
+                         && request.resource.data.status == 'active'
+                        )
+                      );
+      }
+
+      match /rounds/{roundId} {
+        allow create: if request.auth != null
+                      && exists(/databases/$(database)/documents/rooms/$(roomCode)/players/$(request.auth.uid))
+                      && request.resource.data.keys().hasOnly([
+                        'roundNumber', 'winners', 'calledNumbers',
+                        'settings', 'completedAt'
+                      ])
+                      && request.resource.data.roundNumber
+                         == getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.roundNumber
+                      && request.resource.data.winners
+                         == getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.winners
+                      && getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.status
+                         == 'finished';
+        allow read: if request.auth != null
+                    && exists(/databases/$(database)/documents/rooms/$(roomCode)/players/$(request.auth.uid));
+        allow delete: if request.auth != null
+                      && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid
+                         == request.auth.uid;
+        allow update: if false;
+      }
+    }
+  }
+}
