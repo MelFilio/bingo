@@ -66,14 +66,15 @@ service cloud.firestore {
       function validSettings(settings) {
         return settings.keys().hasOnly([
                  'winPattern', 'callMode', 'callInterval',
-                 'cardCount', 'customPattern'
+                 'cardCount', 'hostPlays', 'customPattern'
                ])
                && settings.winPattern in [
                  'line', 'four-corners', 'full-card', 'custom'
                ]
                && settings.callMode in ['manual', 'automatic']
-               && settings.callInterval in [5, 10, 15]
+               && settings.callInterval in [3, 5, 10, 15]
                && settings.cardCount in [1, 2, 3]
+               && settings.hostPlays is bool
                && settings.customPattern is list
                && settings.customPattern.size() == 25;
       }

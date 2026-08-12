@@ -2,6 +2,17 @@ import { useId, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth/useAuth'
 import { Logo } from '../components/Logo'
 import { Spinner } from '../components/Spinner'
+import { cn } from '../lib/styles'
+import {
+  buttonFull,
+  buttonPrimary,
+  eyebrow,
+  formError,
+  formErrorIcon,
+  textButton,
+  usernameInput,
+  usernameInputShell,
+} from '../lib/ui'
 
 const usernamePattern = /^[A-Za-z0-9_]{3,20}$/
 
@@ -37,28 +48,45 @@ export function UsernamePage() {
   }
 
   return (
-    <main className="onboarding-layout">
-      <header className="onboarding-header">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_50%_15%,#e7efe1_0,var(--color-canvas)_38%)] px-6 pb-16 max-[480px]:px-4">
+      <header className="mx-auto flex min-h-20 w-[min(1200px,100%)] items-center justify-between max-[480px]:min-h-[68px]">
         <Logo />
-        <button className="text-button" type="button" onClick={signOut}>
+        <button className={textButton} type="button" onClick={signOut}>
           Sign out
         </button>
       </header>
 
-      <section className="username-card" aria-labelledby="username-title">
-        <div className="username-card__step" aria-hidden="true">1 of 1</div>
-        <p className="eyebrow">Set up your player profile</p>
-        <h1 id="username-title">What should we call you?</h1>
-        <p className="username-card__intro">
+      <section
+        className="relative mx-auto mt-[clamp(56px,10vh,112px)] w-[min(100%,520px)] rounded-lg border border-border bg-white/95 p-[clamp(28px,5vw,48px)] shadow-elevated max-[480px]:mt-9"
+        aria-labelledby="username-title"
+      >
+        <div
+          className="absolute top-6 right-7 rounded-full bg-surface-soft px-[9px] py-[5px] text-[11px] font-bold text-muted max-[480px]:static max-[480px]:mb-6 max-[480px]:inline-block"
+          aria-hidden="true"
+        >
+          1 of 1
+        </div>
+        <p className={eyebrow}>Set up your player profile</p>
+        <h1
+          className="m-0 max-w-[410px] font-display text-[clamp(32px,6vw,44px)] leading-[1.08] tracking-normal"
+          id="username-title"
+        >
+          What should we call you?
+        </h1>
+        <p className="mt-4 mb-8 leading-[1.6] text-muted">
           Choose a unique username. This is what other players will see while
           bingo is ongoing.
         </p>
 
         <form onSubmit={handleSubmit} noValidate>
-          <div className="field username-field">
-            <label htmlFor="username">Username</label>
-            <div className="username-input">
-              <span aria-hidden="true">@</span>
+          <div className="mb-5">
+            <label className="mb-2 block text-sm font-semibold" htmlFor="username">
+              Username
+            </label>
+            <div className={usernameInputShell}>
+              <span className="pl-[15px] font-semibold text-muted" aria-hidden="true">
+                @
+              </span>
               <input
                 id="username"
                 name="username"
@@ -74,26 +102,27 @@ export function UsernamePage() {
                 minLength={3}
                 maxLength={20}
                 pattern="[A-Za-z0-9_]+"
+                className={usernameInput}
                 disabled={submitting}
                 autoFocus
                 required
               />
             </div>
-            <div className="field-meta">
+            <div className="mt-2 flex justify-between gap-4 text-xs text-muted">
               <span id="username-help">Letters, numbers, and underscores only</span>
               <span>{username.length}/20</span>
             </div>
           </div>
 
           {error && (
-            <div className="form-error" id={errorId} role="alert">
-              <span aria-hidden="true">!</span>
+            <div className={formError} id={errorId} role="alert">
+              <span className={formErrorIcon} aria-hidden="true">!</span>
               {error}
             </div>
           )}
 
           <button
-            className="button button--primary button--full"
+            className={cn(buttonPrimary, buttonFull)}
             disabled={submitting}
           >
             {submitting && <Spinner label="Saving username" />}
@@ -101,7 +130,9 @@ export function UsernamePage() {
           </button>
         </form>
 
-        <p className="username-card__account">Signed in as {user?.email}</p>
+        <p className="mt-6 mb-0 [overflow-wrap:anywhere] text-center text-xs text-[#89948d]">
+          Signed in as {user?.email}
+        </p>
       </section>
     </main>
   )

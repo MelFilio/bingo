@@ -3,6 +3,17 @@ import { useAuth } from '../auth/useAuth'
 import { getAuthErrorMessage } from '../auth/auth-errors'
 import { Logo } from '../components/Logo'
 import { Spinner } from '../components/Spinner'
+import { cn } from '../lib/styles'
+import {
+  buttonBase,
+  buttonFull,
+  buttonPrimary,
+  eyebrow,
+  fieldInput,
+  formErrorIcon,
+  formError,
+  textButton,
+} from '../lib/ui'
 
 interface AuthPageProps {
   mode: 'signin' | 'signup'
@@ -66,38 +77,52 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
   }
 
   return (
-    <main className="auth-layout">
-      <section className="auth-story" aria-labelledby="story-title">
+    <main className="grid min-h-screen grid-cols-[minmax(380px,0.9fr)_minmax(520px,1.1fr)] max-[800px]:block">
+      <section
+        className="relative flex flex-col justify-between overflow-hidden bg-[#1d4d3a] p-[clamp(32px,5vw,72px)] text-[#f8fbf6] max-[800px]:hidden"
+        aria-labelledby="story-title"
+      >
         <Logo />
-        <div className="auth-story__content">
-          <p className="eyebrow">Multiplayer Bingo</p>
-          <h1 id="story-title">Call. Mark. Bingo!</h1>
-          <p>
+        <div className="relative z-10 max-w-[560px]">
+          <p className={cn(eyebrow, 'text-[#bcd1ad]')}>Multiplayer Bingo</p>
+          <h1
+            className="m-0 font-display text-[clamp(42px,5vw,72px)] leading-[1.04] tracking-normal"
+            id="story-title"
+          >
+            Call. Mark. Bingo!
+          </h1>
+          <p className="mt-6 mb-0 max-w-[480px] text-lg leading-[1.65] text-[#d0dfd5]">
             Create a room, invite your friends, and race to complete your
             winning pattern.
           </p>
         </div>
-        <figure className="quote">
-          <blockquote>
+        <figure className="relative z-10 mt-12 mb-0 text-[#d8e5dc]">
+          <blockquote className="mb-2 text-[15px]">
             “Every number could be the one.”
           </blockquote>
-          <figcaption>Get your card ready</figcaption>
+          <figcaption className="text-[13px] text-[#a9c0b1]">
+            Get your card ready
+          </figcaption>
         </figure>
-        <div className="story-orb story-orb--one" aria-hidden="true" />
-        <div className="story-orb story-orb--two" aria-hidden="true" />
       </section>
 
-      <section className="auth-panel" aria-labelledby="auth-title">
-        <div className="auth-card">
-          <div className="mobile-logo">
+      <section
+        className="grid place-items-center bg-canvas p-12 max-[800px]:min-h-screen max-[800px]:px-5 max-[800px]:py-8"
+        aria-labelledby="auth-title"
+      >
+        <div className="w-[min(100%,440px)]">
+          <div className="mb-16 hidden max-[800px]:block">
             <Logo />
           </div>
-          <div className="auth-card__heading">
-            <p className="eyebrow">{isSignUp ? 'Get started' : 'Welcome back'}</p>
-            <h2 id="auth-title">
+          <div className="mb-8">
+            <p className={eyebrow}>{isSignUp ? 'Get started' : 'Welcome back'}</p>
+            <h2
+              className="m-0 font-display text-[34px] tracking-normal max-[480px]:text-3xl"
+              id="auth-title"
+            >
               {isSignUp ? 'Create your account' : 'Sign in to Bingo'}
             </h2>
-            <p>
+            <p className="mt-2.5 mb-0 text-muted">
               {isSignUp
                 ? 'Choose your player name and join the fun.'
                 : 'Sign in to host a room or join the next game.'}
@@ -105,7 +130,11 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
           </div>
 
           <button
-            className="button button--google button--full"
+            className={cn(
+              buttonBase,
+              buttonFull,
+              'border-border bg-surface text-text hover:not-disabled:border-[#aebcaf] hover:not-disabled:bg-[#fafcf9]',
+            )}
             type="button"
             onClick={handleGoogleSignIn}
             disabled={submitting || googleSubmitting}
@@ -113,8 +142,8 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
             {googleSubmitting ? (
               <Spinner label="Opening Google sign in" />
             ) : (
-              <svg
-                className="google-icon"
+                <svg
+                className="size-[19px] flex-none"
                 viewBox="0 0 24 24"
                 aria-hidden="true"
               >
@@ -127,14 +156,19 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
             {googleSubmitting ? 'Connecting to Google…' : 'Continue with Google'}
           </button>
 
-          <div className="auth-divider" aria-hidden="true">
-            <span>or continue with email</span>
+          <div
+            className="my-6 flex items-center gap-3.5 text-xs text-[#89948d] before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border"
+            aria-hidden="true"
+          >
+            <span className="whitespace-nowrap">or continue with email</span>
           </div>
 
           <form onSubmit={handleSubmit} noValidate>
             {isSignUp && (
-              <div className="field">
-                <label htmlFor="name">Name</label>
+              <div className="mb-5">
+                <label className="mb-2 block text-sm font-semibold" htmlFor="name">
+                  Name
+                </label>
                 <input
                   id="name"
                   name="name"
@@ -142,14 +176,17 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   placeholder="Jordan Lee"
+                  className={fieldInput}
                   disabled={submitting || googleSubmitting}
                   required
                 />
               </div>
             )}
 
-            <div className="field">
-              <label htmlFor="email">Email address</label>
+            <div className="mb-5">
+              <label className="mb-2 block text-sm font-semibold" htmlFor="email">
+                Email address
+              </label>
               <input
                 id="email"
                 name="email"
@@ -159,15 +196,20 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="you@example.com"
                 aria-describedby={error ? errorId : undefined}
+                className={fieldInput}
                 disabled={submitting || googleSubmitting}
                 required
               />
             </div>
 
-            <div className="field">
-              <div className="field__label-row">
-                <label htmlFor="password">Password</label>
-                {!isSignUp && <span className="field__hint">8+ characters</span>}
+            <div className="mb-5">
+              <div className="flex justify-between gap-4">
+                <label className="mb-2 block text-sm font-semibold" htmlFor="password">
+                  Password
+                </label>
+                {!isSignUp && (
+                  <span className="text-xs text-muted">8+ characters</span>
+                )}
               </div>
               <input
                 id="password"
@@ -178,6 +220,7 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Enter your password"
                 aria-describedby={error ? errorId : undefined}
+                className={fieldInput}
                 disabled={submitting || googleSubmitting}
                 minLength={8}
                 required
@@ -185,14 +228,14 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
             </div>
 
             {error && (
-              <div className="form-error" id={errorId} role="alert">
-                <span aria-hidden="true">!</span>
+              <div className={formError} id={errorId} role="alert">
+                <span className={formErrorIcon} aria-hidden="true">!</span>
                 {error}
               </div>
             )}
 
             <button
-              className="button button--primary button--full"
+              className={cn(buttonPrimary, buttonFull)}
               disabled={submitting || googleSubmitting}
             >
               {submitting && <Spinner label="Signing you in" />}
@@ -206,14 +249,14 @@ export function AuthPage({ mode, onModeChange }: AuthPageProps) {
             </button>
           </form>
 
-          <p className="auth-switch">
+          <p className="mt-[26px] mb-0 text-center text-sm text-muted">
             {isSignUp ? 'Already have an account?' : 'New to Bingo?'}{' '}
-            <button className="text-button" type="button" onClick={switchMode}>
+            <button className={textButton} type="button" onClick={switchMode}>
               {isSignUp ? 'Sign in' : 'Create an account'}
             </button>
           </p>
         </div>
-        <p className="legal-copy">
+        <p className="self-end text-center text-xs text-[#8a958e] max-[800px]:mb-0">
           Play fair, have fun, and be ready to shout Bingo.
         </p>
       </section>

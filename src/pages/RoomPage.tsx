@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAuth } from '../auth/useAuth'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Logo } from '../components/Logo'
@@ -8,6 +8,7 @@ import {
   getBallLabel,
   hasBingo,
   isCellMarked,
+  preserveCalledMarks,
   type CallMode,
   type GameSettings,
   type WinPattern,
@@ -29,6 +30,18 @@ import {
   type RoomPlayer,
   type RoundHistory,
 } from '../features/rooms/rooms'
+import { cn } from '../lib/styles'
+import {
+  avatar,
+  buttonFull,
+  buttonPrimary,
+  buttonSecondary,
+  buttonSmall,
+  eyebrow,
+  pageTopbar,
+  panel,
+  textButton,
+} from '../lib/ui'
 
 type MarkMode = 'automatic' | 'manual'
 
@@ -70,6 +83,11 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
   const isHost = room?.hostUid === user?.uid
   const currentPlayer = players.find((player) => player.uid === user?.uid)
   const isRoomMember = Boolean(currentPlayer)
+  const currentPlayerHasCard = Boolean(
+    room &&
+      currentPlayer &&
+      (room.settings.hostPlays || currentPlayer.uid !== room.hostUid),
+  )
   const markingStorageKey = user && room
     ? `bingo:marks:${code}:${user.uid}:${room.roundNumber}`
     : null
@@ -82,6 +100,7 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
   const canClaim = Boolean(
     room &&
       currentPlayer &&
+      currentPlayerHasCard &&
       currentPlayer.cards.length > 0 &&
       currentPlayer.status === 'active' &&
       room.status === 'playing' &&
@@ -328,6 +347,11 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
   }
 
   function handleMarkModeChange(nextMode: MarkMode) {
+    if (nextMode === 'manual' && room) {
+      setManualMarks((currentMarks) =>
+        preserveCalledMarks(currentMarks, room.calledNumbers),
+      )
+    }
     setMarkMode(nextMode)
   }
 
@@ -367,31 +391,46 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
     }
   }
 
-  if (loading) {
-    return <main className="app-loader"><Spinner label="Opening room" /></main>
+  if (loading || (leaving && !room)) {
+    return (
+      <main className="flex min-h-screen items-center justify-center gap-[22px] text-primary">
+        <Spinner label={leaving ? 'Leaving room' : 'Opening room'} />
+      </main>
+    )
   }
 
   if (!room) {
     return (
-      <main className="room-missing">
+      <main className="grid min-h-screen place-content-center justify-items-center p-6 text-center">
         <Logo />
-        <h1>Room not found</h1>
-        <p>This room may have closed, or the code may be incorrect.</p>
-        <button className="button button--primary" onClick={onLeave}>Back home</button>
+        <h1 className="mt-12 mb-2 font-display text-[38px]">
+          Room not found
+        </h1>
+        <p className="mt-0 mb-6 text-muted">
+          This room may have closed, or the code may be incorrect.
+        </p>
+        <button className={buttonPrimary} onClick={onLeave}>Back home</button>
       </main>
     )
   }
 
   return (
-    <div className="room-shell">
-      <header className="topbar">
+    <div className="min-h-screen bg-canvas">
+      <header className={pageTopbar}>
         <Logo />
-        <div className="room-topbar__actions">
-          <span className={`game-status game-status--${room.status}`}>
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              'rounded-full px-2.5 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em]',
+              room.status === 'playing' && 'bg-[#e3f2e4] text-[#23603e]',
+              room.status === 'finished' && 'bg-[#f8efd4] text-[#725719]',
+              room.status === 'waiting' && 'bg-surface-soft text-muted',
+            )}
+          >
             {room.status}
           </span>
           <button
-            className="button button--secondary button--small"
+            className={cn(buttonSecondary, buttonSmall)}
             type="button"
             onClick={handleLeave}
             disabled={leaving}
@@ -402,8 +441,15 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
         </div>
       </header>
 
-      <main className="room-page">
-        {error && <div className="room-error" role="alert">{error}</div>}
+      <main className="mx-auto w-[min(1040px,calc(100%-48px))] py-16 max-[1024px]:w-[min(100%-48px,900px)] max-[1024px]:py-12 max-[480px]:w-[calc(100%-32px)] max-[480px]:py-10">
+        {error && (
+          <div
+            className="mb-6 rounded-sm border border-[#efc5c1] bg-[#fff5f4] px-4 py-3.5 text-sm text-danger"
+            role="alert"
+          >
+            {error}
+          </div>
+        )}
 
         {room.status === 'waiting' ? (
           <WaitingRoom
@@ -445,6 +491,11 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
         )}
 
         <RoundHistoryList history={roundHistory} />
+        {room.status === 'waiting' && (
+          <div className="mt-7">
+            <PlayersList players={players} hostUid={room.hostUid} />
+          </div>
+        )}
       </main>
 
       <ConfirmDialog
@@ -504,54 +555,99 @@ function WaitingRoom({
   onReroll,
   onStart,
 }: WaitingRoomProps) {
-  const cardsReady = players.every(
-    (player) => player.cards.length === settings.cardCount,
+  const currentPlayerHasCard = Boolean(
+    currentPlayer &&
+      (settings.hostPlays || currentPlayer.uid !== room.hostUid),
   )
+  const cardPlayers = players.filter(
+    (player) => settings.hostPlays || player.uid !== room.hostUid,
+  )
+  const cardsReady = players.every(
+    (player) =>
+      !settings.hostPlays && player.uid === room.hostUid
+        ? true
+        : player.cards.length === settings.cardCount,
+  )
+  const [patternDialogOpen, setPatternDialogOpen] = useState(false)
 
   return (
     <>
-      <section className="room-hero" aria-labelledby="room-title">
+      <section
+        className="mb-10 flex items-center justify-between gap-12 max-[800px]:flex-col max-[800px]:items-stretch"
+        aria-labelledby="room-title"
+      >
         <div>
-          <p className="eyebrow">Bingo lobby</p>
-          <h1 id="room-title">Waiting for players</h1>
-          <p>Share the room code. New players will appear here automatically.</p>
+          <p className={eyebrow}>Bingo lobby</p>
+          <h1
+            className="m-0 font-display text-[clamp(38px,6vw,60px)] tracking-normal"
+            id="room-title"
+          >
+            Waiting for players
+          </h1>
+          <p className="mt-3.5 mb-0 max-w-[540px] text-[17px] leading-[1.55] text-muted">
+            Share the room code. New players will appear here automatically.
+          </p>
         </div>
         <RoomCode code={room.code} copied={copied} onCopy={onCopy} />
       </section>
 
-      <div className="lobby-layout">
-        <div className="lobby-main">
-          <PlayersList players={players} hostUid={room.hostUid} />
+      <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(300px,0.65fr)] items-start gap-[22px] max-[1024px]:grid-cols-1">
+        <div className="grid gap-[22px]">
           {currentPlayer && (
-            <section className="lobby-cards" aria-labelledby="lobby-cards-title">
-              <div className="game-panel-heading">
+            <section
+              className={cn(panel, 'p-[26px_30px_30px]')}
+              aria-labelledby="lobby-cards-title"
+            >
+              <div className="mb-6 flex items-center justify-between gap-[18px] max-[480px]:flex-col max-[480px]:items-start">
                 <div>
-                  <p className="eyebrow">Your game</p>
-                  <h2 id="lobby-cards-title">
-                    {currentPlayer.cards.length === 1 ? 'Your card' : 'Your cards'}
+                  <p className={cn(eyebrow, 'mb-1')}>Your game</p>
+                  <h2
+                    className="m-0 font-display text-2xl tracking-normal"
+                    id="lobby-cards-title"
+                  >
+                    {currentPlayerHasCard
+                      ? currentPlayer.cards.length === 1
+                        ? 'Your card'
+                        : 'Your cards'
+                      : 'Host only'}
                   </h2>
                 </div>
-                <button
-                  className="button button--secondary button--small"
-                  type="button"
-                  onClick={onReroll}
-                  disabled={rerolling}
-                >
-                  {rerolling && <Spinner label="Rerolling cards" />}
-                  {rerolling ? 'Rerolling…' : 'Reroll cards'}
-                </button>
+                {currentPlayerHasCard && (
+                  <button
+                    className={cn(buttonSecondary, buttonSmall)}
+                    type="button"
+                    onClick={onReroll}
+                    disabled={rerolling}
+                  >
+                    {rerolling && <Spinner label="Rerolling cards" />}
+                    {rerolling ? 'Rerolling…' : 'Reroll cards'}
+                  </button>
+                )}
               </div>
-              {currentPlayer.cards.length === settings.cardCount ? (
-                <div className="lobby-card-grid">
+              {!currentPlayerHasCard ? (
+                <div
+                  className="rounded-sm border border-[#d1dfc7] bg-[#f7faf5] p-[18px] text-[13px] leading-normal text-muted"
+                  role="status"
+                >
+                  You are hosting this round without a player card.
+                </div>
+              ) : currentPlayer.cards.length === settings.cardCount ? (
+                <div className="grid grid-cols-1 gap-[18px] min-[620px]:grid-cols-2">
                   {currentPlayer.cards.map((card, index) => (
-                    <div key={`${index}-${card.cells.join('-')}`}>
-                      <span className="mini-card-label">Card {index + 1}</span>
+                    <BingoCardFrame
+                      compact
+                      title={`Card ${index + 1}`}
+                      key={`${index}-${card.cells.join('-')}`}
+                    >
                       <BingoCard card={card.cells} calledNumbers={[]} compact />
-                    </div>
+                    </BingoCardFrame>
                   ))}
                 </div>
               ) : (
-                <div className="cards-outdated" role="status">
+                <div
+                  className="rounded-sm border border-[#e2d29d] bg-[#fff9e7] p-[18px] text-[13px] leading-normal text-[#6c5318]"
+                  role="status"
+                >
                   The host changed this round to {settings.cardCount}{' '}
                   {settings.cardCount === 1 ? 'card' : 'cards'}. Reroll to continue.
                 </div>
@@ -560,20 +656,31 @@ function WaitingRoom({
           )}
         </div>
 
-        <section className="settings-card" aria-labelledby="settings-title">
-          <div className="settings-card__header">
-            <p className="eyebrow">Host controls</p>
-            <h2 id="settings-title">Game settings</h2>
+        <section
+          className={cn(panel, 'p-7')}
+          aria-labelledby="settings-title"
+        >
+          <div className="mb-[26px]">
+            <p className={cn(eyebrow, 'mb-1')}>Host controls</p>
+            <h2
+              className="m-0 font-display text-2xl tracking-normal"
+              id="settings-title"
+            >
+              Game settings
+            </h2>
           </div>
 
           {isHost ? (
             <>
-              <fieldset>
-                <legend>Winning pattern</legend>
-                <div className="segmented-control">
+              <fieldset className="mb-[22px] min-w-0 border-0 p-0">
+                <legend className="mb-[9px] text-[13px] font-bold text-text">
+                  Winning pattern
+                </legend>
+                <div className="grid grid-cols-3 gap-1 rounded-[10px] bg-surface-soft p-1 max-[480px]:grid-cols-1">
                   {(Object.keys(patternLabels) as WinPattern[]).map((pattern) => (
                     <label key={pattern}>
                       <input
+                        className="peer sr-only"
                         type="radio"
                         name="win-pattern"
                         value={pattern}
@@ -581,19 +688,27 @@ function WaitingRoom({
                         onChange={() => onSettingsChange({ ...settings, winPattern: pattern })}
                         disabled={savingSettings}
                       />
-                      <span>{patternLabels[pattern]}</span>
+                      <span className="grid min-h-[38px] place-items-center rounded-[7px] px-2 py-[5px] text-center text-xs font-bold text-muted shadow-none peer-checked:bg-surface peer-checked:text-primary peer-checked:shadow-[0_1px_5px_rgba(33,54,42,.09)] peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus/50">
+                        {patternLabels[pattern]}
+                      </span>
                     </label>
                   ))}
                 </div>
               </fieldset>
 
               {settings.winPattern === 'custom' && (
-                <fieldset>
-                  <legend>Select required squares</legend>
-                  <div className="pattern-editor" aria-label="Custom winning pattern">
+                <fieldset className="mb-[22px] min-w-0 border-0 p-0">
+                  <legend className="mb-[9px] text-[13px] font-bold text-text">
+                    Select required squares
+                  </legend>
+                  <div
+                    className="grid grid-cols-5 gap-[5px]"
+                    aria-label="Custom winning pattern"
+                  >
                     {settings.customPattern.map((selected, index) => (
                       <label key={index}>
                         <input
+                          className="peer sr-only"
                           type="checkbox"
                           checked={selected}
                           onChange={() => {
@@ -604,20 +719,27 @@ function WaitingRoom({
                           disabled={savingSettings || index === 12}
                           aria-label={`Pattern square ${index + 1}`}
                         />
-                        <span>{index === 12 ? 'FREE' : selected ? '✓' : ''}</span>
+                        <span className="grid aspect-square place-items-center rounded-md border border-border bg-[#fafcf9] text-xs font-extrabold text-primary peer-checked:border-primary peer-checked:bg-primary peer-checked:text-white peer-disabled:cursor-not-allowed peer-disabled:opacity-70 peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus/50">
+                          {index === 12 ? 'FREE' : selected ? '✓' : ''}
+                        </span>
                       </label>
                     ))}
                   </div>
-                  <p className="settings-help">Selected squares must all be called.</p>
+                  <p className="mt-2.5 mb-0 text-left text-xs leading-normal text-muted">
+                    Selected squares must all be called.
+                  </p>
                 </fieldset>
               )}
 
-              <fieldset>
-                <legend>Cards per player</legend>
-                <div className="segmented-control">
+              <fieldset className="mb-[22px] min-w-0 border-0 p-0">
+                <legend className="mb-[9px] text-[13px] font-bold text-text">
+                  Cards per player
+                </legend>
+                <div className="grid grid-cols-3 gap-1 rounded-[10px] bg-surface-soft p-1 max-[480px]:grid-cols-1">
                   {([1, 2, 3] as const).map((cardCount) => (
                     <label key={cardCount}>
                       <input
+                        className="peer sr-only"
                         type="radio"
                         name="card-count"
                         value={cardCount}
@@ -625,18 +747,54 @@ function WaitingRoom({
                         onChange={() => onSettingsChange({ ...settings, cardCount })}
                         disabled={savingSettings}
                       />
-                      <span>{cardCount} {cardCount === 1 ? 'card' : 'cards'}</span>
+                      <span className="grid min-h-[38px] place-items-center rounded-[7px] px-2 py-[5px] text-center text-xs font-bold text-muted peer-checked:bg-surface peer-checked:text-primary peer-checked:shadow-[0_1px_5px_rgba(33,54,42,.09)] peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus/50">
+                        {cardCount} {cardCount === 1 ? 'card' : 'cards'}
+                      </span>
                     </label>
                   ))}
                 </div>
               </fieldset>
 
-              <fieldset>
-                <legend>Number calling</legend>
-                <div className="segmented-control segmented-control--two">
+              <fieldset className="mb-[22px] min-w-0 border-0 p-0">
+                <legend className="mb-[9px] text-[13px] font-bold text-text">
+                  Host role
+                </legend>
+                <div className="grid grid-cols-2 gap-1 rounded-[10px] bg-surface-soft p-1">
+                  {[
+                    { label: 'Host gets card', value: true },
+                    { label: 'Host only', value: false },
+                  ].map((option) => (
+                    <label key={option.label}>
+                      <input
+                        className="peer sr-only"
+                        type="radio"
+                        name="host-plays"
+                        checked={settings.hostPlays === option.value}
+                        onChange={() =>
+                          onSettingsChange({
+                            ...settings,
+                            hostPlays: option.value,
+                          })
+                        }
+                        disabled={savingSettings}
+                      />
+                      <span className="grid min-h-[38px] place-items-center rounded-[7px] px-2 py-[5px] text-center text-xs font-bold text-muted peer-checked:bg-surface peer-checked:text-primary peer-checked:shadow-[0_1px_5px_rgba(33,54,42,.09)] peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus/50">
+                        {option.label}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="mb-[22px] min-w-0 border-0 p-0">
+                <legend className="mb-[9px] text-[13px] font-bold text-text">
+                  Number calling
+                </legend>
+                <div className="grid grid-cols-2 gap-1 rounded-[10px] bg-surface-soft p-1">
                   {(['manual', 'automatic'] as CallMode[]).map((mode) => (
                     <label key={mode}>
                       <input
+                        className="peer sr-only"
                         type="radio"
                         name="call-mode"
                         value={mode}
@@ -644,26 +802,35 @@ function WaitingRoom({
                         onChange={() => onSettingsChange({ ...settings, callMode: mode })}
                         disabled={savingSettings}
                       />
-                      <span>{mode === 'manual' ? 'Manual' : 'Automatic'}</span>
+                      <span className="grid min-h-[38px] place-items-center rounded-[7px] px-2 py-[5px] text-center text-xs font-bold text-muted peer-checked:bg-surface peer-checked:text-primary peer-checked:shadow-[0_1px_5px_rgba(33,54,42,.09)] peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus/50">
+                        {mode === 'manual' ? 'Manual' : 'Automatic'}
+                      </span>
                     </label>
                   ))}
                 </div>
               </fieldset>
 
               {settings.callMode === 'automatic' && (
-                <div className="field settings-select">
-                  <label htmlFor="call-interval">Call a number every</label>
+                <div className="mb-5">
+                  <label
+                    className="mb-[9px] block text-[13px] font-bold text-text"
+                    htmlFor="call-interval"
+                  >
+                    Call a number every
+                  </label>
                   <select
                     id="call-interval"
                     value={settings.callInterval}
                     onChange={(event) =>
                       onSettingsChange({
                         ...settings,
-                        callInterval: Number(event.target.value) as 5 | 10 | 15,
+                        callInterval: Number(event.target.value) as 3 | 5 | 10 | 15,
                       })
                     }
+                    className="h-11 w-full rounded-sm border border-border bg-surface px-3 text-text"
                     disabled={savingSettings}
                   >
+                    <option value={3}>3 seconds</option>
                     <option value={5}>5 seconds</option>
                     <option value={10}>10 seconds</option>
                     <option value={15}>15 seconds</option>
@@ -672,13 +839,13 @@ function WaitingRoom({
               )}
 
               <button
-                className="button button--primary button--full"
+                className={cn(buttonPrimary, buttonFull)}
                 type="button"
                 onClick={onStart}
                 disabled={
                   starting ||
                   savingSettings ||
-                  players.length === 0 ||
+                  cardPlayers.length === 0 ||
                   !cardsReady ||
                   (settings.winPattern === 'custom' &&
                     !settings.customPattern.some((selected, index) =>
@@ -690,20 +857,38 @@ function WaitingRoom({
                 {starting ? 'Starting game…' : 'Start game'}
               </button>
               {!cardsReady && (
-                <p className="settings-warning">
+                <p className="mt-2.5 mb-0 text-center text-xs leading-normal text-[#7a6228]">
                   Waiting for every player to reroll {settings.cardCount}{' '}
                   {settings.cardCount === 1 ? 'card' : 'cards'}.
                 </p>
               )}
             </>
           ) : (
-            <div className="host-waiting">
-              <Spinner label="Waiting for host" />
-              <p>The host is choosing the game settings and will start soon.</p>
+            <div className="grid gap-[22px]">
+              <div className="flex min-h-[180px] items-center justify-center gap-3 text-center text-muted">
+                <Spinner label="Waiting for host" />
+                <p className="max-w-[260px] leading-[1.55]">
+                  The host is choosing the game settings and will start soon.
+                </p>
+              </div>
+              {settings.winPattern === 'custom' && (
+                <button
+                  className={buttonSecondary}
+                  type="button"
+                  onClick={() => setPatternDialogOpen(true)}
+                >
+                  Winning pattern
+                </button>
+              )}
             </div>
           )}
         </section>
       </div>
+      <CustomPatternDialog
+        open={patternDialogOpen}
+        pattern={settings.customPattern}
+        onClose={() => setPatternDialogOpen(false)}
+      />
     </>
   )
 }
@@ -750,6 +935,20 @@ function GameBoard({
   onCellToggle,
 }: GameBoardProps) {
   const recentCalls = [...room.calledNumbers].reverse().slice(1, 9)
+  const [patternDialogOpen, setPatternDialogOpen] = useState(false)
+  const [calledNumbersDialogOpen, setCalledNumbersDialogOpen] = useState(false)
+  const [winnersDialogOpen, setWinnersDialogOpen] = useState(false)
+  const playerHasCard = Boolean(
+    player && (room.settings.hostPlays || player.uid !== room.hostUid),
+  )
+  const activeCardPlayers = players.filter(
+    (roomPlayer) =>
+      roomPlayer.status === 'active' &&
+      (room.settings.hostPlays || roomPlayer.uid !== room.hostUid),
+  )
+  const waitingPlayers = players.filter(
+    (roomPlayer) => roomPlayer.status === 'waiting',
+  )
   const wrongMarks =
     markMode === 'manual'
       ? manualMarks.filter(
@@ -757,21 +956,45 @@ function GameBoard({
         )
       : []
 
+  useEffect(() => {
+    if (room.status === 'finished' && room.winners.length > 0) {
+      setWinnersDialogOpen(true)
+    }
+  }, [room.roundNumber, room.status, room.winners.length])
+
   return (
     <>
       {room.status === 'finished' && (
-        <section className="winner-banner" aria-live="polite">
-          <span aria-hidden="true">★</span>
+        <section
+          className="mb-[34px] flex items-center gap-5 rounded-lg border border-[#dccb91] bg-[linear-gradient(135deg,#fff8de,#f1e5b8)] px-7 py-6 text-[#4d3b11] max-[480px]:flex-wrap max-[480px]:items-start max-[480px]:p-5"
+          aria-live="polite"
+        >
+          <span
+            className="grid size-12 flex-none place-items-center rounded-full bg-[#8a6b22] text-[22px] text-[#fff8de]"
+            aria-hidden="true"
+          >
+            ★
+          </span>
           <div>
-            <p>{room.winners.length === 1 ? 'We have a winner' : 'We have winners'}</p>
-            <h1>
+            <p className="mt-0 mb-[3px] text-xs font-extrabold uppercase tracking-[0.1em]">
+              {room.winners.length === 1 ? 'We have a winner' : 'We have winners'}
+            </p>
+            <h1 className="m-0 font-display text-[clamp(22px,4vw,32px)] tracking-normal">
               {room.winners.map((winner) => `@${winner.username}`).join(', ')}{' '}
               called Bingo!
             </h1>
           </div>
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2.5 max-[480px]:ml-0 max-[480px]:w-full">
+            <button
+              className={cn(buttonSecondary, 'bg-white/70 text-[#4d3b11] hover:not-disabled:bg-white max-[480px]:w-full')}
+              type="button"
+              onClick={() => setWinnersDialogOpen(true)}
+            >
+              View winners
+            </button>
           {isHost && (
             <button
-              className="button button--primary"
+              className={cn(buttonPrimary, 'whitespace-nowrap max-[480px]:w-full')}
               type="button"
               onClick={onRequestRestart}
               disabled={returningToLobby}
@@ -780,65 +1003,73 @@ function GameBoard({
               {returningToLobby ? 'Restarting…' : 'Restart game'}
             </button>
           )}
+          </div>
         </section>
       )}
 
-      <section className="game-header">
+      <section className="mb-[34px]">
         <div>
-          <p className="eyebrow">Room {room.code}</p>
-          <h1>{room.status === 'playing' ? 'Bingo is live' : 'Round complete'}</h1>
-          <p>{patternLabels[room.settings.winPattern]} wins this round.</p>
-        </div>
-        <div className="call-summary">
-          <div
-            className={`current-call${room.callingPaused ? ' is-paused' : ''}`}
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            <span>Current call</span>
-            <strong>{room.currentNumber ? getBallLabel(room.currentNumber) : '—'}</strong>
-            <small>
-              {room.callingPaused ? 'Calling paused' : `${room.calledNumbers.length} of 75 called`}
-            </small>
-          </div>
-          {recentCalls.length > 0 && (
-            <div className="recent-call-strip">
-              <span>Recent</span>
-              <ol className="recent-calls" aria-label="Previous calls">
-                {recentCalls.map((number) => (
-                  <li key={number}>{getBallLabel(number)}</li>
-                ))}
-              </ol>
-            </div>
-          )}
+          <p className={eyebrow}>Room {room.code}</p>
+          <h1 className="m-0 font-display text-[clamp(38px,6vw,58px)] tracking-normal">
+            {room.status === 'playing' ? 'Bingo is live' : 'Round complete'}
+          </h1>
+          <p className="mt-2.5 mb-0 text-muted">
+            {patternLabels[room.settings.winPattern]} wins this round.
+          </p>
         </div>
       </section>
 
-      <div className="game-layout">
-        <section className="bingo-card-panel" aria-labelledby="your-card-title">
-          <div className="game-panel-heading">
+      <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)] items-start gap-[22px] max-[1024px]:grid-cols-1">
+        <section
+          className={cn(panel, 'p-7 max-[1024px]:p-6 max-[480px]:p-5')}
+          aria-labelledby="your-card-title"
+        >
+          <div className="mb-6 flex items-center justify-between gap-[18px] max-[480px]:flex-col max-[480px]:items-start">
             <div>
-              <p className="eyebrow">Player card</p>
-              <h2 id="your-card-title">Your bingo card</h2>
-            </div>
-            {room.status === 'playing' && player?.status === 'active' && (
-              <button
-                className="button button--bingo"
-                type="button"
-                onClick={onClaim}
-                disabled={!canClaim || claiming}
+              <p className={cn(eyebrow, 'mb-1')}>Player card</p>
+              <h2
+                className="m-0 font-display text-2xl tracking-normal"
+                id="your-card-title"
               >
-                {claiming && <Spinner label="Checking Bingo" />}
-                {claiming ? 'Checking…' : 'Call Bingo!'}
-              </button>
-            )}
+                Your bingo card
+              </h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              {room.settings.winPattern === 'custom' && (
+                <button
+                  className={cn(buttonSecondary, buttonSmall)}
+                  type="button"
+                  onClick={() => setPatternDialogOpen(true)}
+                >
+                  Winning pattern
+                </button>
+              )}
+              {room.status === 'playing' && player?.status === 'active' && playerHasCard && (
+                <button
+                  className="inline-flex min-h-11 items-center justify-center gap-[9px] rounded-sm border border-transparent bg-[#b7791f] px-[18px] font-semibold text-white transition-[background,border-color,transform] duration-150 hover:not-disabled:bg-[#946118] active:not-disabled:translate-y-px max-[640px]:hidden"
+                  type="button"
+                  onClick={onClaim}
+                  disabled={!canClaim || claiming}
+                >
+                  {claiming && <Spinner label="Checking Bingo" />}
+                  {claiming ? 'Checking…' : 'Call Bingo!'}
+                </button>
+              )}
+            </div>
           </div>
 
-          {room.status === 'playing' && player?.status === 'active' && (
-            <div className="marking-toolbar">
-              <div className="live-call-controls" aria-label="Card marking mode">
+          {room.status === 'playing' && player?.status === 'active' && playerHasCard && (
+            <div className="mt-[-4px] mb-[22px] flex items-center justify-between gap-4 rounded-sm border border-border bg-[#fafcf9] p-3 max-[480px]:flex-col max-[480px]:items-stretch">
+              <div
+                className="grid min-w-[250px] grid-cols-2 gap-1 rounded-[10px] bg-surface-soft p-1 max-[480px]:min-w-0"
+                aria-label="Card marking mode"
+              >
                 <button
-                  className={markMode === 'automatic' ? 'is-active' : ''}
+                  className={cn(
+                    'min-h-9 rounded-[7px] border-0 bg-transparent px-2 py-[5px] text-xs font-bold text-muted',
+                    markMode === 'automatic' &&
+                      'bg-surface text-primary shadow-[0_1px_5px_rgba(33,54,42,.09)]',
+                  )}
                   type="button"
                   onClick={() => onMarkModeChange('automatic')}
                   aria-pressed={markMode === 'automatic'}
@@ -846,7 +1077,11 @@ function GameBoard({
                   Automatic marks
                 </button>
                 <button
-                  className={markMode === 'manual' ? 'is-active' : ''}
+                  className={cn(
+                    'min-h-9 rounded-[7px] border-0 bg-transparent px-2 py-[5px] text-xs font-bold text-muted',
+                    markMode === 'manual' &&
+                      'bg-surface text-primary shadow-[0_1px_5px_rgba(33,54,42,.09)]',
+                  )}
                   type="button"
                   onClick={() => onMarkModeChange('manual')}
                   aria-pressed={markMode === 'manual'}
@@ -855,7 +1090,13 @@ function GameBoard({
                 </button>
               </div>
               {markMode === 'manual' && (
-                <p className={wrongMarks.length ? 'wrong-mark-status has-errors' : 'wrong-mark-status'} role="status">
+                <p
+                  className={cn(
+                    'm-0 text-xs font-bold',
+                    wrongMarks.length > 0 ? 'text-danger' : 'text-[#35614c]',
+                  )}
+                  role="status"
+                >
                   {wrongMarks.length
                     ? `${wrongMarks.length} wrong ${wrongMarks.length === 1 ? 'mark' : 'marks'} detected`
                     : 'All of your marks are correct'}
@@ -865,21 +1106,53 @@ function GameBoard({
           )}
 
           {player?.status === 'waiting' ? (
-            <div className="next-game-waiting" role="status">
-              <span aria-hidden="true">⌛</span>
+            <div
+              className="flex min-h-[260px] items-center justify-center gap-[18px] rounded-md border border-dashed border-[#c8d5c5] bg-[#f7faf5] p-8 text-left max-[480px]:flex-col max-[480px]:items-start"
+              role="status"
+            >
+              <span
+                className="grid size-12 flex-none place-items-center rounded-full bg-surface-soft text-[22px]"
+                aria-hidden="true"
+              >
+                ⌛
+              </span>
               <div>
-                <h3>You’re on the waiting list</h3>
-                <p>
+                <h3 className="mt-0 mb-[7px] font-display text-xl">
+                  You’re on the waiting list
+                </h3>
+                <p className="m-0 max-w-[420px] leading-[1.55] text-muted">
                   This game is already underway. You’ll join automatically when
                   the host restarts for the next game.
                 </p>
               </div>
             </div>
+          ) : !playerHasCard ? (
+            <div
+              className="flex min-h-[260px] items-center justify-center gap-[18px] rounded-md border border-dashed border-[#c8d5c5] bg-[#f7faf5] p-8 text-left max-[480px]:flex-col max-[480px]:items-start"
+              role="status"
+            >
+              <span
+                className="grid size-12 flex-none place-items-center rounded-full bg-surface-soft font-display text-sm font-extrabold text-primary"
+                aria-hidden="true"
+              >
+                HOST
+              </span>
+              <div>
+                <h3 className="mt-0 mb-[7px] font-display text-xl">
+                  You are hosting this round
+                </h3>
+                <p className="m-0 max-w-[420px] leading-[1.55] text-muted">
+                  Host only is enabled, so you can run the game without a bingo card.
+                </p>
+              </div>
+            </div>
           ) : player?.cards.length ? (
-            <div className="active-cards">
+            <div className="grid grid-cols-1 gap-5 min-[620px]:grid-cols-2">
               {player.cards.map((card, index) => (
-                <div className="active-card" key={`${index}-${card.cells.join('-')}`}>
-                  {player.cards.length > 1 && <span>Card {index + 1}</span>}
+                <BingoCardFrame
+                  title={player.cards.length > 1 ? `Card ${index + 1}` : 'Bingo card'}
+                  key={`${index}-${card.cells.join('-')}`}
+                >
                   <BingoCard
                     card={card.cells}
                     calledNumbers={room.calledNumbers}
@@ -888,14 +1161,16 @@ function GameBoard({
                     disabled={room.status !== 'playing'}
                     onToggle={onCellToggle}
                   />
-                </div>
+                </BingoCardFrame>
               ))}
             </div>
           ) : (
-            <p className="card-unavailable">Your player card is unavailable.</p>
+            <p className="mt-4 mb-0 text-center text-[13px] text-muted">
+              Your player card is unavailable.
+            </p>
           )}
-          {room.status === 'playing' && player?.status === 'active' && !canClaim && (
-            <p className="claim-help">
+          {room.status === 'playing' && player?.status === 'active' && playerHasCard && !canClaim && (
+            <p className="mt-4 mb-0 text-center text-[13px] text-muted">
               {markMode === 'manual'
                 ? 'Tap card numbers to mark them. Wrong marks are highlighted.'
                 : 'Called numbers are marked automatically.'}
@@ -903,19 +1178,83 @@ function GameBoard({
           )}
         </section>
 
-        <aside className="caller-panel">
-          <div className="game-panel-heading">
+        <div className="grid min-w-0 gap-[22px]">
+          <div
+            className={cn(
+              'grid min-w-[180px] grid-cols-1 items-center gap-3.5 rounded-md bg-primary px-6 py-[18px] text-[#eff7eb] max-[640px]:hidden',
+              room.callingPaused && 'bg-[#efe3bd] text-[#493b1c]',
+            )}
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <div className="grid justify-items-center">
+              <span className={cn('text-[11px] font-bold uppercase tracking-[0.08em] text-[#c5d8cc]', room.callingPaused && 'text-[#715e32]')}>
+                Current call
+              </span>
+              <strong className="my-0.5 font-display text-[42px] tracking-normal max-[480px]:text-4xl">
+                {room.currentNumber ? getBallLabel(room.currentNumber) : '—'}
+              </strong>
+              <small className={cn('text-[11px] font-bold uppercase tracking-[0.08em] text-[#c5d8cc]', room.callingPaused && 'text-[#715e32]')}>
+                {room.callingPaused ? 'Calling paused' : `${room.calledNumbers.length} of 75 called`}
+              </small>
+            </div>
+            {recentCalls.length > 0 && (
+              <div className={cn('w-full min-w-0 border-t border-white/20 pt-3', room.callingPaused && 'border-[#715e32]/20')}>
+                <div className="mb-[7px] flex items-center justify-center gap-2">
+                  <span className={cn('text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#c5d8cc]', room.callingPaused && 'text-[#715e32]')}>
+                    Recent
+                  </span>
+                  <button
+                    className={cn(
+                      'rounded-full border border-white/25 bg-white/10 px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#eff7eb] hover:bg-white/20',
+                      room.callingPaused &&
+                        'border-[#715e32]/25 bg-white/30 text-[#493b1c] hover:bg-white/45',
+                    )}
+                    type="button"
+                    onClick={() => setCalledNumbersDialogOpen(true)}
+                  >
+                    View all
+                  </button>
+                </div>
+                <ol
+                  className="m-0 flex list-none flex-wrap justify-center gap-1.5 p-0"
+                  aria-label="Previous calls"
+                >
+                  {recentCalls.map((number) => (
+                    <li
+                      className="grid size-[34px] place-items-center rounded-full border border-border bg-surface font-display text-[10px] font-extrabold text-primary shadow-[0_1px_3px_rgba(33,54,42,.06)] max-[480px]:size-8 max-[480px]:text-[9px]"
+                      key={number}
+                    >
+                      {getBallLabel(number)}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </div>
+
+          <aside className={cn(panel, 'p-7 max-[480px]:p-5')}>
+          <div className="mb-6 flex items-center justify-between gap-[18px] max-[480px]:flex-col max-[480px]:items-start">
             <div>
-              <p className="eyebrow">Game details</p>
-              <h2>{isHost && room.status === 'playing' ? 'Call controls' : 'Players'}</h2>
+              <p className={cn(eyebrow, 'mb-1')}>Game details</p>
+              <h2 className="m-0 font-display text-2xl tracking-normal">
+                {isHost && room.status === 'playing' ? 'Call controls' : 'Players'}
+              </h2>
             </div>
           </div>
 
           {isHost && room.status === 'playing' && (
-            <div className="caller-controls">
-              <div className="live-call-controls" aria-label="Calling mode">
+            <div className="mt-6 grid gap-2.5">
+              <div
+                className="grid grid-cols-2 gap-1 rounded-[10px] bg-surface-soft p-1"
+                aria-label="Calling mode"
+              >
                 <button
-                  className={room.settings.callMode === 'manual' ? 'is-active' : ''}
+                  className={cn(
+                    'min-h-9 rounded-[7px] border-0 bg-transparent px-2 py-[5px] text-xs font-bold text-muted disabled:cursor-not-allowed disabled:opacity-65',
+                    room.settings.callMode === 'manual' &&
+                      'bg-surface text-primary shadow-[0_1px_5px_rgba(33,54,42,.09)]',
+                  )}
                   type="button"
                   onClick={() => onCallModeChange('manual')}
                   disabled={updatingCallControls}
@@ -924,7 +1263,11 @@ function GameBoard({
                   Manual
                 </button>
                 <button
-                  className={room.settings.callMode === 'automatic' ? 'is-active' : ''}
+                  className={cn(
+                    'min-h-9 rounded-[7px] border-0 bg-transparent px-2 py-[5px] text-xs font-bold text-muted disabled:cursor-not-allowed disabled:opacity-65',
+                    room.settings.callMode === 'automatic' &&
+                      'bg-surface text-primary shadow-[0_1px_5px_rgba(33,54,42,.09)]',
+                  )}
                   type="button"
                   onClick={() => onCallModeChange('automatic')}
                   disabled={updatingCallControls}
@@ -935,9 +1278,10 @@ function GameBoard({
               </div>
 
               <button
-                className={`button button--full ${
-                  room.callingPaused ? 'button--primary' : 'button--secondary'
-                }`}
+                className={cn(
+                  room.callingPaused ? buttonPrimary : buttonSecondary,
+                  buttonFull,
+                )}
                 type="button"
                 onClick={onPauseToggle}
                 disabled={updatingCallControls || calling}
@@ -948,7 +1292,7 @@ function GameBoard({
 
               {room.settings.callMode === 'manual' ? (
                 <button
-                  className="button button--primary button--full"
+                  className={cn(buttonPrimary, buttonFull)}
                   type="button"
                   onClick={onCall}
                   disabled={
@@ -962,7 +1306,12 @@ function GameBoard({
                   {calling ? 'Calling…' : 'Call next number'}
                 </button>
               ) : (
-                <div className={`auto-call-status${room.callingPaused ? ' is-paused' : ''}`}>
+                <div
+                  className={cn(
+                    'flex items-center justify-center gap-[9px] rounded-sm bg-[#e8f0e1] p-3 text-center text-xs font-bold text-[#35614c]',
+                    room.callingPaused && 'bg-[#f4ecd2] text-[#715e32]',
+                  )}
+                >
                   {!room.callingPaused && <Spinner label="Automatic calling active" />}
                   {room.callingPaused
                     ? 'Automatic calling is paused'
@@ -971,7 +1320,7 @@ function GameBoard({
               )}
 
               <button
-                className="text-button restart-round-button"
+                className={cn(textButton, 'mt-1 justify-self-center text-danger')}
                 type="button"
                 onClick={onRequestRestart}
                 disabled={returningToLobby || updatingCallControls || calling}
@@ -981,34 +1330,488 @@ function GameBoard({
             </div>
           )}
 
-          <div className="game-player-summary">
+          <div className="mt-6 flex items-center justify-between gap-3.5 border-t border-border pt-5 text-xs text-muted">
             <span>
-              {players.filter((roomPlayer) => roomPlayer.status === 'active').length}{' '}
+              {activeCardPlayers.length}{' '}
               active
-              {players.some((roomPlayer) => roomPlayer.status === 'waiting') &&
-                ` · ${players.filter((roomPlayer) => roomPlayer.status === 'waiting').length} waiting`}
+              {waitingPlayers.length > 0 && ` · ${waitingPlayers.length} waiting`}
             </span>
-            <div className="avatar-stack" aria-hidden="true">
-              {players.slice(0, 4).map((roomPlayer) => (
-                <span key={roomPlayer.uid}>{roomPlayer.username.charAt(0).toUpperCase()}</span>
+            <div className="flex pl-2" aria-hidden="true">
+              {activeCardPlayers.slice(0, 4).map((roomPlayer) => (
+                <span
+                  className="-ml-2 grid size-7 place-items-center rounded-full border-2 border-surface bg-primary text-[10px] font-extrabold text-white"
+                  key={roomPlayer.uid}
+                >
+                  {roomPlayer.username.charAt(0).toUpperCase()}
+                </span>
               ))}
             </div>
           </div>
-          {players.some((roomPlayer) => roomPlayer.status === 'waiting') && (
-            <div className="waiting-player-list">
-              <span>Waiting for next game</span>
-              <ul>
-                {players
-                  .filter((roomPlayer) => roomPlayer.status === 'waiting')
-                  .map((roomPlayer) => (
-                    <li key={roomPlayer.uid}>@{roomPlayer.username}</li>
+          {waitingPlayers.length > 0 && (
+            <div className="mt-4 rounded-sm bg-[#f4ecd2] p-3.5 text-[#715e32]">
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.08em]">
+                Waiting for next game
+              </span>
+              <ul className="mt-2 flex list-none flex-wrap gap-1.5 p-0">
+                {waitingPlayers.map((roomPlayer) => (
+                    <li
+                      className="rounded-full bg-white/55 px-[7px] py-1 text-[11px] font-bold"
+                      key={roomPlayer.uid}
+                    >
+                      @{roomPlayer.username}
+                    </li>
                   ))}
               </ul>
             </div>
           )}
-        </aside>
+          </aside>
+        </div>
       </div>
+      {room.status === 'playing' && player?.status === 'active' && playerHasCard && (
+        <>
+          <FloatingGameControls
+            callingPaused={room.callingPaused}
+            calledCount={room.calledNumbers.length}
+            currentNumber={room.currentNumber}
+            canClaim={canClaim}
+            claiming={claiming}
+            onClaim={onClaim}
+            onViewCalls={() => setCalledNumbersDialogOpen(true)}
+          />
+          <div className="hidden h-32 max-[640px]:block" aria-hidden="true" />
+        </>
+      )}
+      <CustomPatternDialog
+        open={patternDialogOpen}
+        pattern={room.settings.customPattern}
+        onClose={() => setPatternDialogOpen(false)}
+      />
+      <CalledNumbersDialog
+        calledNumbers={room.calledNumbers}
+        open={calledNumbersDialogOpen}
+        onClose={() => setCalledNumbersDialogOpen(false)}
+      />
+      <WinnersDialog
+        open={winnersDialogOpen}
+        winners={room.winners}
+        onClose={() => setWinnersDialogOpen(false)}
+      />
     </>
+  )
+}
+
+function FloatingGameControls({
+  callingPaused,
+  calledCount,
+  currentNumber,
+  canClaim,
+  claiming,
+  onClaim,
+  onViewCalls,
+}: {
+  callingPaused: boolean
+  calledCount: number
+  currentNumber: number | null
+  canClaim: boolean
+  claiming: boolean
+  onClaim: () => void
+  onViewCalls: () => void
+}) {
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 hidden border-t border-border bg-surface/95 px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))] shadow-[0_-16px_48px_rgba(17,32,23,.16)] backdrop-blur-xl max-[640px]:block">
+      <div className="mx-auto grid max-w-[520px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+        <div
+          className={cn(
+            'grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-primary px-4 py-3 text-[#eff7eb]',
+            callingPaused && 'bg-[#efe3bd] text-[#493b1c]',
+          )}
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <strong className="font-display text-3xl tracking-normal">
+            {currentNumber ? getBallLabel(currentNumber) : '—'}
+          </strong>
+          <div className="min-w-0">
+            <span
+              className={cn(
+                'block text-[10px] font-bold uppercase tracking-[0.08em] text-[#c5d8cc]',
+                callingPaused && 'text-[#715e32]',
+              )}
+            >
+              Current call
+            </span>
+            <small
+              className={cn(
+                'block truncate text-[11px] font-bold uppercase tracking-[0.08em] text-[#c5d8cc]',
+                callingPaused && 'text-[#715e32]',
+              )}
+            >
+              {callingPaused ? 'Paused' : `${calledCount} of 75 called`}
+            </small>
+          </div>
+          <button
+            className={cn(
+              'inline-flex size-9 items-center justify-center rounded-sm border border-white/25 bg-white/10 text-[#eff7eb]',
+              callingPaused &&
+                'border-[#715e32]/25 bg-white/30 text-[#493b1c]',
+            )}
+            type="button"
+            onClick={onViewCalls}
+            disabled={calledCount === 0}
+            aria-label="View all called numbers"
+          >
+            <span className="relative block size-4" aria-hidden="true">
+              <span className="absolute top-0 left-0 size-1.5 border-t-2 border-l-2 border-current" />
+              <span className="absolute top-0 right-0 size-1.5 border-t-2 border-r-2 border-current" />
+              <span className="absolute bottom-0 left-0 size-1.5 border-b-2 border-l-2 border-current" />
+              <span className="absolute right-0 bottom-0 size-1.5 border-r-2 border-b-2 border-current" />
+            </span>
+          </button>
+        </div>
+        <div>
+          <button
+            className="inline-flex min-h-[58px] items-center justify-center gap-[9px] rounded-sm border border-transparent bg-[#b7791f] px-4 text-sm font-bold text-white transition-[background,border-color,transform] duration-150 hover:not-disabled:bg-[#946118] active:not-disabled:translate-y-px"
+            type="button"
+            onClick={onClaim}
+            disabled={!canClaim || claiming}
+          >
+            {claiming && <Spinner label="Checking Bingo" />}
+            {claiming ? 'Checking…' : 'Call Bingo!'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CalledNumbersDialog({
+  calledNumbers,
+  open,
+  onClose,
+}: {
+  calledNumbers: number[]
+  open: boolean
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const calledSet = new Set(calledNumbers)
+  const latestCall = calledNumbers.at(-1)
+  const columns = ['B', 'I', 'N', 'G', 'O'].map((letter, column) => ({
+    letter,
+    numbers: Array.from({ length: 15 }, (_, index) => column * 15 + index + 1),
+  }))
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+
+    if (open && !dialog.open) dialog.showModal()
+    if (!open && dialog.open) dialog.close()
+  }, [open])
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="m-auto max-h-[min(90vh,720px)] w-[min(100%-32px,640px)] flex-col overflow-hidden rounded-lg border border-border bg-surface p-0 text-text shadow-dialog backdrop:bg-[#0f1b148c] backdrop:backdrop-blur-[3px] open:flex open:animate-[dialog-in_180ms_cubic-bezier(.2,0,0,1)]"
+      aria-labelledby="called-numbers-title"
+      onCancel={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div className="px-7 pt-7">
+        <p className={cn(eyebrow, 'mb-1')}>Called numbers</p>
+        <div className="flex items-start justify-between gap-4">
+          <h2
+            className="m-0 font-display text-2xl tracking-normal"
+            id="called-numbers-title"
+          >
+            All calls
+          </h2>
+          <span className="rounded-full bg-surface-soft px-3 py-1.5 text-xs font-bold text-muted">
+            {calledNumbers.length} of 75
+          </span>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-7 pb-6">
+        {calledNumbers.length > 0 ? (
+          <div
+            className="mt-5 grid grid-cols-5 gap-2"
+            aria-label="Called numbers arranged by Bingo column"
+          >
+            {columns.map(({ letter, numbers }) => (
+              <div className="grid min-w-0 gap-1.5" key={letter}>
+                <div className="grid h-9 place-items-center rounded-sm bg-primary font-display text-xl font-extrabold text-white">
+                  {letter}
+                </div>
+                {numbers.map((number) => {
+                  const called = calledSet.has(number)
+                  const latest = number === latestCall
+
+                  return (
+                    <div
+                      className={cn(
+                        'grid aspect-square min-h-8 place-items-center rounded-sm border font-display text-xs font-extrabold min-[420px]:text-sm',
+                        latest &&
+                          'border-primary bg-primary text-white shadow-[inset_0_0_0_3px_rgba(255,255,255,.14)]',
+                        called &&
+                          !latest &&
+                          'border-[#d1dfc7] bg-[#e8f0e1] text-primary',
+                        !called && 'border-border bg-[#fafcf9] text-muted/45',
+                      )}
+                      key={number}
+                      aria-label={`${getBallLabel(number)}${
+                        called ? ', called' : ', not called'
+                      }${
+                        latest ? ', latest call' : ''
+                      }`}
+                    >
+                      {number}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-5 mb-0 rounded-sm border border-border bg-[#fafcf9] p-4 text-sm text-muted">
+            No numbers have been called yet.
+          </p>
+        )}
+      </div>
+      <div className="flex justify-end border-t border-border bg-[#fafcf9] px-7 py-[18px]">
+        <button className={buttonPrimary} type="button" onClick={onClose}>
+          Done
+        </button>
+      </div>
+    </dialog>
+  )
+}
+
+function WinnersDialog({
+  open,
+  winners,
+  onClose,
+}: {
+  open: boolean
+  winners: Room['winners']
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+
+    if (open && !dialog.open) dialog.showModal()
+    if (!open && dialog.open) dialog.close()
+  }, [open])
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="m-auto w-[min(100%-32px,520px)] rounded-lg border border-border bg-surface p-0 text-text shadow-dialog backdrop:bg-[#0f1b148c] backdrop:backdrop-blur-[3px] open:animate-[dialog-in_180ms_cubic-bezier(.2,0,0,1)]"
+      aria-labelledby="winners-dialog-title"
+      onCancel={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <ConfettiOverlay />
+      <div className="relative z-10 px-7 pt-8 pb-6 text-center">
+        <p className={cn(eyebrow, 'mb-1')}>Round complete</p>
+        <h2
+          className="m-0 font-display text-[clamp(28px,6vw,40px)] tracking-normal"
+          id="winners-dialog-title"
+        >
+          {winners.length === 1 ? 'Bingo!' : 'Multiple Bingos!'}
+        </h2>
+        <p className="mx-auto mt-2 mb-0 max-w-[340px] text-sm leading-[1.55] text-muted">
+          {winners.length === 1
+            ? 'One player completed the winning pattern.'
+            : `${winners.length} players completed the winning pattern.`}
+        </p>
+
+        <ol className="mt-6 mb-0 grid list-none gap-2.5 p-0 text-left">
+          {winners.map((winner, index) => (
+            <li
+              className="flex min-h-14 items-center gap-3 rounded-md border border-[#d1dfc7] bg-[#f7faf5] px-4 py-3"
+              key={winner.uid}
+            >
+              <span
+                className="grid size-8 flex-none place-items-center rounded-full bg-primary text-sm font-extrabold text-white"
+                aria-hidden="true"
+              >
+                {index + 1}
+              </span>
+              <strong className="[overflow-wrap:anywhere]">@{winner.username}</strong>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <div className="relative z-10 flex justify-end border-t border-border bg-[#fafcf9] px-7 py-[18px]">
+        <button className={buttonPrimary} type="button" onClick={onClose}>
+          Done
+        </button>
+      </div>
+    </dialog>
+  )
+}
+
+function ConfettiOverlay() {
+  const confettiPieces = Array.from({ length: 72 }, (_, index) => index)
+
+  return (
+    <div
+      className="pointer-events-none fixed inset-0 z-20 overflow-hidden"
+      aria-hidden="true"
+    >
+      {confettiPieces.map((piece) => {
+        const left = (piece * 37) % 100
+        const delay = (piece % 18) * 90
+        const duration = 2600 + (piece % 7) * 220
+        const sway = piece % 2 === 0 ? 32 : -32
+        const colors = ['#225c45', '#b7791f', '#d8e7c7', '#b42318', '#47705f']
+        const color = colors[piece % colors.length]
+
+        return (
+          <span
+            className="absolute -top-8 h-3 w-2 rounded-[2px] animate-[confetti-fall_var(--confetti-duration)_linear_var(--confetti-delay)_infinite]"
+            key={piece}
+            style={{
+              left: `${left}%`,
+              backgroundColor: color,
+              transform: `rotate(${piece * 17}deg)`,
+              ['--confetti-delay' as string]: `${delay}ms`,
+              ['--confetti-duration' as string]: `${duration}ms`,
+              ['--confetti-sway' as string]: `${sway}px`,
+            }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function CustomPatternDialog({
+  open,
+  pattern,
+  onClose,
+}: {
+  open: boolean
+  pattern: boolean[]
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+
+    if (open && !dialog.open) dialog.showModal()
+    if (!open && dialog.open) dialog.close()
+  }, [open])
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="m-auto w-[min(100%-32px,440px)] rounded-lg border border-border bg-surface p-0 text-text shadow-dialog backdrop:bg-[#0f1b148c] backdrop:backdrop-blur-[3px] open:animate-[dialog-in_180ms_cubic-bezier(.2,0,0,1)]"
+      aria-labelledby="custom-pattern-dialog-title"
+      onCancel={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div className="px-7 pt-7 pb-6">
+        <p className={cn(eyebrow, 'mb-1')}>Winning pattern</p>
+        <h2
+          className="m-0 font-display text-2xl tracking-normal"
+          id="custom-pattern-dialog-title"
+        >
+          Custom pattern
+        </h2>
+        <CustomPatternPreview pattern={pattern} />
+      </div>
+      <div className="flex justify-end border-t border-border bg-[#fafcf9] px-7 py-[18px]">
+        <button className={buttonPrimary} type="button" onClick={onClose}>
+          Done
+        </button>
+      </div>
+    </dialog>
+  )
+}
+
+function CustomPatternPreview({ pattern }: { pattern: boolean[] }) {
+  return (
+    <div className="mt-5">
+      <div
+        className="grid grid-cols-5 gap-[5px]"
+        aria-label="Required squares for the custom winning pattern"
+      >
+        {Array.from({ length: 25 }, (_, index) => {
+          const selected = Boolean(pattern[index])
+          const isFree = index === 12
+
+          return (
+            <div
+              className={cn(
+                'grid aspect-square place-items-center rounded-md border text-[11px] font-extrabold',
+                selected
+                  ? 'border-primary bg-primary text-white'
+                  : 'border-border bg-[#fafcf9] text-muted',
+              )}
+              key={index}
+              aria-label={`Pattern square ${index + 1}${
+                selected ? ', required' : ', not required'
+              }`}
+            >
+              {isFree ? 'FREE' : selected ? '✓' : ''}
+            </div>
+          )
+        })}
+      </div>
+      <p className="mt-2.5 mb-0 text-xs leading-normal text-muted">
+        Match every highlighted square to call Bingo.
+      </p>
+    </div>
+  )
+}
+
+function BingoCardFrame({
+  children,
+  compact = false,
+  title,
+}: {
+  children: ReactNode
+  compact?: boolean
+  title: string
+}) {
+  return (
+    <article
+      className={cn(
+        'min-w-0 rounded-md border-2 border-primary bg-[#fffdf7] shadow-[0_12px_28px_rgba(33,54,42,.08)]',
+        compact ? 'p-2.5' : 'p-3.5',
+      )}
+    >
+      <div
+        className={cn(
+          'mb-3 flex items-center justify-between rounded-sm bg-primary px-3 text-white',
+          compact ? 'min-h-8' : 'min-h-10',
+        )}
+      >
+        <span className="font-display text-sm font-extrabold uppercase tracking-[0.14em]">
+          Bingo
+        </span>
+        <span className="rounded-full bg-white/15 px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.08em]">
+          {title}
+        </span>
+      </div>
+      <div className="rounded-sm border border-[#d1dfc7] bg-white p-2">
+        {children}
+      </div>
+    </article>
   )
 }
 
@@ -1016,21 +1819,38 @@ function RoundHistoryList({ history }: { history: RoundHistory[] }) {
   if (history.length === 0) return null
 
   return (
-    <section className="round-history" aria-labelledby="round-history-title">
-      <div className="round-history__heading">
-        <p className="eyebrow">Room results</p>
-        <h2 id="round-history-title">Game history</h2>
+    <section
+      className={cn(panel, 'mt-7 overflow-hidden')}
+      aria-labelledby="round-history-title"
+    >
+      <div className="border-b border-border px-7 pt-6 pb-[18px] max-[480px]:px-5">
+        <p className={cn(eyebrow, 'mb-1')}>Room results</p>
+        <h2
+          className="m-0 font-display text-2xl tracking-normal"
+          id="round-history-title"
+        >
+          Game history
+        </h2>
       </div>
-      <ol>
+      <ol className="m-0 list-none px-7 max-[480px]:px-5">
         {history.map((round) => (
-          <li key={round.roundNumber}>
-            <div>
-              <span>Game {round.roundNumber}</span>
-              <small>{round.calledNumbers.length} numbers called</small>
+          <li
+            className="flex min-h-[78px] items-center justify-between gap-6 border-b border-[#edf1eb] py-3.5 last:border-b-0 max-[480px]:flex-col max-[480px]:items-start max-[480px]:gap-2.5"
+            key={round.roundNumber}
+          >
+            <div className="grid gap-1">
+              <span className="text-[13px] font-extrabold">
+                Game {round.roundNumber}
+              </span>
+              <small className="text-muted">
+                {round.calledNumbers.length} numbers called
+              </small>
             </div>
-            <div className="history-winners">
-              <span>{round.winners.length === 1 ? 'Winner' : 'Winners'}</span>
-              <strong>
+            <div className="grid justify-items-end text-right max-[480px]:justify-items-start max-[480px]:text-left">
+              <span className="text-[10px] uppercase tracking-[0.1em] text-muted">
+                {round.winners.length === 1 ? 'Winner' : 'Winners'}
+              </span>
+              <strong className="[overflow-wrap:anywhere] text-primary">
                 {round.winners.map((winner) => `@${winner.username}`).join(', ')}
               </strong>
             </div>
@@ -1059,9 +1879,24 @@ function BingoCard({
   onToggle?: (number: number) => void
 }) {
   return (
-    <div className={`bingo-grid${compact ? ' bingo-grid--compact' : ''}`} aria-label="Bingo card">
+    <div
+      className={cn(
+        'grid grid-cols-5',
+        compact ? 'gap-[3px]' : 'gap-[7px] max-[480px]:gap-1',
+      )}
+      aria-label="Bingo card"
+    >
       {'BINGO'.split('').map((letter) => (
-        <div className="bingo-grid__letter" key={letter} aria-hidden="true">{letter}</div>
+        <div
+          className={cn(
+            'grid place-items-center font-display font-extrabold text-primary',
+            compact ? 'h-6 text-sm' : 'h-10 text-2xl',
+          )}
+          key={letter}
+          aria-hidden="true"
+        >
+          {letter}
+        </div>
       ))}
       {card.map((cell, index) => {
         const automaticMark = isCellMarked(cell, calledNumbers)
@@ -1070,9 +1905,24 @@ function BingoCard({
         const wrong = Boolean(
           markMode === 'manual' && cell !== null && manualMark && !automaticMark,
         )
-        const className = `bingo-cell${marked ? ' is-marked' : ''}${
-          wrong ? ' is-wrong' : ''
-        }${cell === null ? ' is-free' : ''}`
+        const className = cn(
+          'grid aspect-square place-items-center border border-border bg-[#fafcf9] font-display font-bold text-text transition-[color,background,border-color,transform] duration-200',
+          compact
+            ? cn('rounded-[5px]', cell === null ? 'text-[5px]' : 'text-[10px]')
+            : cn(
+                'rounded-[10px] max-[480px]:rounded-[7px]',
+                cell === null ? 'text-[7px]' : 'text-[clamp(15px,3vw,21px)]',
+              ),
+          !compact &&
+            'hover:not-disabled:-translate-y-px hover:not-disabled:border-focus',
+          marked &&
+            !wrong &&
+            'border-primary bg-primary text-white shadow-[inset_0_0_0_3px_rgba(255,255,255,.12)]',
+          wrong &&
+            'border-danger bg-danger text-white shadow-[inset_0_0_0_3px_rgba(255,255,255,.14)]',
+          cell === null &&
+            'tracking-normal',
+        )
         const label =
           cell === null
             ? 'Free space, marked'
@@ -1094,7 +1944,15 @@ function BingoCard({
           )
         }
 
-        return <div className={className} key={`${index}-${cell ?? 'free'}`} aria-label={label}>{cell ?? 'FREE'}</div>
+        return (
+          <div
+            className={className}
+            key={`${index}-${cell ?? 'free'}`}
+            aria-label={label}
+          >
+            {cell ?? 'FREE'}
+          </div>
+        )
       })}
     </div>
   )
@@ -1102,10 +1960,14 @@ function BingoCard({
 
 function RoomCode({ code, copied, onCopy }: { code: string; copied: boolean; onCopy: () => void }) {
   return (
-    <div className="room-code-card">
-      <span>Room code</span>
-      <strong>{code}</strong>
-      <button className="text-button" type="button" onClick={onCopy}>
+    <div className="grid min-w-[230px] justify-items-center rounded-md border border-[#cadac4] bg-[#e8f0e1] px-7 py-[22px] max-[800px]:self-start max-[480px]:w-full">
+      <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted">
+        Room code
+      </span>
+      <strong className="mt-2 mb-[5px] font-display text-[32px] tracking-[0.16em]">
+        {code}
+      </strong>
+      <button className={textButton} type="button" onClick={onCopy}>
         {copied ? 'Copied!' : 'Copy code'}
       </button>
     </div>
@@ -1115,27 +1977,49 @@ function RoomCode({ code, copied, onCopy }: { code: string; copied: boolean; onC
 function PlayersList({ players, hostUid }: { players: RoomPlayer[]; hostUid: string }) {
   const { user } = useAuth()
   return (
-    <section className="players-card" aria-labelledby="players-title">
-      <div className="players-card__header">
+    <section
+      className={cn(panel, 'overflow-hidden')}
+      aria-labelledby="players-title"
+    >
+      <div className="flex items-center justify-between gap-6 border-b border-border px-[30px] py-[26px] max-[480px]:px-5">
         <div>
-          <p className="eyebrow">Lobby</p>
-          <h2 id="players-title">Players</h2>
+          <p className={cn(eyebrow, 'mb-1')}>Lobby</p>
+          <h2 className="m-0 font-display text-[25px]" id="players-title">
+            Players
+          </h2>
         </div>
-        <span className="player-count">{players.length} {players.length === 1 ? 'player' : 'players'}</span>
+        <span className="rounded-full bg-surface-soft px-[11px] py-[7px] text-xs font-bold text-muted">
+          {players.length} {players.length === 1 ? 'player' : 'players'}
+        </span>
       </div>
       {players.length > 0 ? (
-        <ul className="player-list">
+        <ul className="m-0 grid list-none grid-cols-1 px-[30px] py-2 min-[700px]:grid-cols-2 min-[700px]:gap-x-6 max-[480px]:px-5">
           {players.map((player) => (
-            <li key={player.uid}>
-              <span className="avatar" aria-hidden="true">{player.username.charAt(0).toUpperCase()}</span>
+            <li
+              className="flex min-h-[72px] items-center gap-[13px] border-b border-[#edf1eb] last:border-b-0"
+              key={player.uid}
+            >
+              <span className={avatar} aria-hidden="true">
+                {player.username.charAt(0).toUpperCase()}
+              </span>
               <strong>@{player.username}</strong>
-              {player.uid === hostUid && <span className="host-badge">Host</span>}
-              {player.uid === user?.uid && <span className="you-label">You</span>}
+              {player.uid === hostUid && (
+                <span className="rounded-full bg-[#e8f0e1] px-2 py-1 text-[11px] font-bold text-[#35614c]">
+                  Host
+                </span>
+              )}
+              {player.uid === user?.uid && (
+                <span className="ml-auto rounded-full bg-surface-soft px-2 py-1 text-[11px] font-bold text-muted">
+                  You
+                </span>
+              )}
             </li>
           ))}
         </ul>
       ) : (
-        <div className="players-empty"><Spinner label="Waiting for players" /> Waiting for players…</div>
+        <div className="flex min-h-[170px] items-center justify-center gap-3 text-muted">
+          <Spinner label="Waiting for players" /> Waiting for players…
+        </div>
       )}
     </section>
   )

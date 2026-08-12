@@ -323,6 +323,7 @@ export async function claimBingo(
       .filter((snapshot) => snapshot.exists())
       .map((snapshot) => snapshot.data() as RoomPlayer)
       .filter((roomPlayer) => roomPlayer.status !== 'waiting')
+      .filter((roomPlayer) => room.settings.hostPlays || roomPlayer.uid !== room.hostUid)
     const claimant = roomPlayers.find((roomPlayer) => roomPlayer.uid === player.uid)
 
     if (!claimant) throw new RoomError('not-found')

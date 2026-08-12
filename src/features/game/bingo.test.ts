@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { createBingoCard, getBallLabel, hasBingo } from './bingo'
+import {
+  createBingoCard,
+  getBallLabel,
+  hasBingo,
+  preserveCalledMarks,
+} from './bingo'
 
 const card = [
   1, 16, 31, 46, 61,
@@ -54,5 +59,9 @@ describe('bingo mechanics', () => {
   it('formats called balls with their bingo letter', () => {
     expect(getBallLabel(1)).toBe('B1')
     expect(getBallLabel(75)).toBe('O75')
+  })
+
+  it('preserves called numbers when switching to manual marks', () => {
+    expect(preserveCalledMarks([7, 18], [18, 42])).toEqual([7, 18, 42])
   })
 })

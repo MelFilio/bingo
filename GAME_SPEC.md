@@ -82,8 +82,9 @@ rooms/{roomCode}
   settings:
     winPattern: "line" | "four-corners" | "full-card" | "custom"
     callMode: "manual" | "automatic"
-    callInterval: 5 | 10 | 15
+    callInterval: 3 | 5 | 10 | 15
     cardCount: 1 | 2 | 3
+    hostPlays: boolean
     customPattern: boolean[] // 25 cells
   calledNumbers: number[]
   currentNumber: number | null

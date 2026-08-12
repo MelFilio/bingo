@@ -5,16 +5,18 @@ export type CallMode = 'manual' | 'automatic'
 export interface GameSettings {
   winPattern: WinPattern
   callMode: CallMode
-  callInterval: 5 | 10 | 15
+  callInterval: 3 | 5 | 10 | 15
   cardCount: 1 | 2 | 3
+  hostPlays: boolean
   customPattern: boolean[]
 }
 
 export const defaultGameSettings: GameSettings = {
   winPattern: 'line',
   callMode: 'manual',
-  callInterval: 10,
+  callInterval: 5,
   cardCount: 1,
+  hostPlays: true,
   customPattern: Array.from({ length: 25 }, (_, index) =>
     [0, 6, 12, 18, 24].includes(index),
   ),
@@ -46,6 +48,13 @@ export function createBingoCard(random = Math.random): BingoCell[] {
 
 export function isCellMarked(cell: BingoCell, calledNumbers: number[]) {
   return cell === null || calledNumbers.includes(cell)
+}
+
+export function preserveCalledMarks(
+  manualMarks: number[],
+  calledNumbers: number[],
+) {
+  return [...new Set([...manualMarks, ...calledNumbers])]
 }
 
 export function hasBingo(

@@ -26,7 +26,7 @@ export function App() {
 
   if (loading) {
     return (
-      <main className="app-loader">
+      <main className="flex min-h-screen items-center justify-center gap-[22px] text-primary">
         <Logo />
         <Spinner label="Restoring your session" />
       </main>
