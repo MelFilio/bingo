@@ -7,6 +7,7 @@ interface ConfirmDialogProps {
   title: string
   description: string
   confirmLabel: string
+  loadingLabel?: string
   loading?: boolean
   onCancel: () => void
   onConfirm: () => void
@@ -17,6 +18,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
+  loadingLabel,
   loading = false,
   onCancel,
   onConfirm,
@@ -91,8 +93,8 @@ export function ConfirmDialog({
           onClick={onConfirm}
           disabled={loading}
         >
-          {loading && <Spinner label="Closing room" />}
-          {loading ? 'Closing room…' : confirmLabel}
+          {loading && <Spinner label={loadingLabel ?? confirmLabel} />}
+          {loading ? `${loadingLabel ?? confirmLabel}…` : confirmLabel}
         </button>
       </div>
     </dialog>

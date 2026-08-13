@@ -41,6 +41,45 @@ service cloud.firestore {
                                == request.auth.uid
                             && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.usernameLower)).data.username
                                == request.resource.data.username));
+
+      match /rooms/{roomCode} {
+        function roomPath() {
+          return /databases/$(database)/documents/rooms/$(roomCode);
+        }
+
+        function playerPath() {
+          return /databases/$(database)/documents/rooms/$(roomCode)/players/$(userId);
+        }
+
+        function validMembership() {
+          return request.resource.data.keys().hasOnly([
+                   'code', 'role', 'joinedAt', 'updatedAt'
+                 ])
+                 && request.resource.data.code == roomCode
+                 && request.resource.data.role in ['host', 'player']
+                 && existsAfter(roomPath())
+                 && existsAfter(playerPath())
+                 && (
+                   (request.resource.data.role == 'host'
+                    && getAfter(roomPath()).data.hostUid == userId)
+                   ||
+                   (request.resource.data.role == 'player'
+                    && getAfter(roomPath()).data.hostUid != userId)
+                 );
+        }
+
+        allow read: if request.auth != null
+                    && request.auth.uid == userId;
+        allow create, update: if request.auth != null
+                              && request.auth.uid == userId
+                              && validMembership();
+        allow delete: if request.auth != null
+                      && (
+                        request.auth.uid == userId
+                        ||
+                        get(roomPath()).data.hostUid == request.auth.uid
+                      );
+      }
     }
 
     match /usernames/{username} {
@@ -183,7 +222,8 @@ service cloud.firestore {
                       ;
         allow read: if request.auth != null
                     && (playerId == request.auth.uid
-                        || exists(/databases/$(database)/documents/rooms/$(roomCode)/players/$(request.auth.uid)));
+                        || exists(/databases/$(database)/documents/rooms/$(roomCode)/players/$(request.auth.uid))
+                        || exists(/databases/$(database)/documents/users/$(request.auth.uid)/rooms/$(roomCode)));
         allow delete: if request.auth != null
                       && (playerId == request.auth.uid
                           || get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid
@@ -242,7 +282,8 @@ service cloud.firestore {
                       && getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.status
                          == 'finished';
         allow read: if request.auth != null
-                    && exists(/databases/$(database)/documents/rooms/$(roomCode)/players/$(request.auth.uid));
+                    && (exists(/databases/$(database)/documents/rooms/$(roomCode)/players/$(request.auth.uid))
+                        || exists(/databases/$(database)/documents/users/$(request.auth.uid)/rooms/$(roomCode)));
         allow delete: if request.auth != null
                       && get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid
                          == request.auth.uid;

@@ -1,15 +1,24 @@
 import {
   collection,
   doc,
+  deleteDoc,
+  getDoc,
+  getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
+  startAfter,
   Timestamp,
   updateDoc,
+  where,
   writeBatch,
+  type DocumentData,
   type FirestoreError,
+  type QueryDocumentSnapshot,
+  type QueryConstraint,
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '../../lib/firebase'
@@ -35,11 +44,29 @@ export interface Room {
   winnerUsername: string | null
   winners: RoomWinner[]
   roundNumber: number
+  createdAt?: Timestamp
+  updatedAt?: Timestamp
 }
 
 export interface RoomWinner {
   uid: string
   username: string
+}
+
+export interface UserRoomMembership {
+  code: string
+  role: 'host' | 'player'
+}
+
+export interface UserRoom extends Room {
+  role: UserRoomMembership['role']
+}
+
+export type UserRoomPageCursor = QueryDocumentSnapshot<DocumentData>
+
+export interface UserRoomsPage {
+  rooms: UserRoom[]
+  nextCursor: UserRoomPageCursor | null
 }
 
 export interface RoundHistory {
@@ -90,11 +117,48 @@ function createCards(count: GameSettings['cardCount']) {
   return Array.from({ length: count }, () => ({ cells: createBingoCard() }))
 }
 
+function normalizeRoomData(data: Record<string, unknown>) {
+  const storedSettings = data.settings as Partial<GameSettings> | undefined
+  return {
+    ...data,
+    settings: {
+      ...defaultGameSettings,
+      ...storedSettings,
+      customPattern:
+        storedSettings?.customPattern ?? defaultGameSettings.customPattern,
+    },
+    calledNumbers: data.calledNumbers ?? [],
+    currentNumber: data.currentNumber ?? null,
+    callingPaused: data.callingPaused ?? false,
+    winnerUid: data.winnerUid ?? null,
+    winnerUsername: data.winnerUsername ?? null,
+    winners:
+      data.winners ??
+      (data.winnerUid
+        ? [{ uid: data.winnerUid, username: data.winnerUsername }]
+        : []),
+    roundNumber: data.roundNumber ?? 1,
+  } as Room
+}
+
+function userRoomRef(uid: string, code: string) {
+  return doc(db, 'users', uid, 'rooms', code)
+}
+
+function userRoomMembership(code: string, role: UserRoomMembership['role']) {
+  return {
+    code,
+    role,
+    updatedAt: serverTimestamp(),
+  }
+}
+
 export async function createRoom(player: PlayerIdentity) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const code = generateRoomCode()
     const roomRef = doc(db, 'rooms', code)
     const playerRef = doc(roomRef, 'players', player.uid)
+    const membershipRef = userRoomRef(player.uid, code)
 
     const created = await runTransaction(db, async (transaction) => {
       const roomSnapshot = await transaction.get(roomRef)
@@ -126,6 +190,10 @@ export async function createRoom(player: PlayerIdentity) {
         disconnectedAt: null,
         joinedAt: serverTimestamp(),
       })
+      transaction.set(membershipRef, {
+        ...userRoomMembership(code, 'host'),
+        joinedAt: serverTimestamp(),
+      })
       return true
     })
 
@@ -138,6 +206,7 @@ export async function createRoom(player: PlayerIdentity) {
 export async function joinRoom(code: string, player: PlayerIdentity) {
   const roomRef = doc(db, 'rooms', code)
   const playerRef = doc(roomRef, 'players', player.uid)
+  const membershipRef = userRoomRef(player.uid, code)
 
   await runTransaction(db, async (transaction) => {
     const [roomSnapshot, playerSnapshot] = await Promise.all([
@@ -154,6 +223,14 @@ export async function joinRoom(code: string, player: PlayerIdentity) {
         lastSeenAt: serverTimestamp(),
         disconnectedAt: null,
       })
+      transaction.set(
+        membershipRef,
+        userRoomMembership(
+          code,
+          room.hostUid === player.uid ? 'host' : 'player',
+        ),
+        { merge: true },
+      )
       return
     }
 
@@ -169,12 +246,20 @@ export async function joinRoom(code: string, player: PlayerIdentity) {
       disconnectedAt: null,
       joinedAt: serverTimestamp(),
     })
+    transaction.set(membershipRef, {
+      ...userRoomMembership(
+        code,
+        room.hostUid === player.uid ? 'host' : 'player',
+      ),
+      joinedAt: serverTimestamp(),
+    }, { merge: true })
   })
 }
 
 export async function markRoomPlayerOnline(code: string, player: PlayerIdentity) {
   const roomRef = doc(db, 'rooms', code)
   const playerRef = doc(roomRef, 'players', player.uid)
+  const membershipRef = userRoomRef(player.uid, code)
 
   await runTransaction(db, async (transaction) => {
     const [roomSnapshot, playerSnapshot] = await Promise.all([
@@ -196,6 +281,13 @@ export async function markRoomPlayerOnline(code: string, player: PlayerIdentity)
         disconnectedAt: null,
         joinedAt: serverTimestamp(),
       })
+      transaction.set(membershipRef, {
+        ...userRoomMembership(
+          code,
+          room.hostUid === player.uid ? 'host' : 'player',
+        ),
+        joinedAt: serverTimestamp(),
+      }, { merge: true })
       return
     }
 
@@ -205,6 +297,10 @@ export async function markRoomPlayerOnline(code: string, player: PlayerIdentity)
       lastSeenAt: serverTimestamp(),
       disconnectedAt: null,
     })
+    transaction.set(membershipRef, userRoomMembership(
+      code,
+      room.hostUid === player.uid ? 'host' : 'player',
+    ), { merge: true })
   })
 }
 
@@ -477,31 +573,57 @@ export function subscribeToRoom(
         return
       }
 
-      const data = snapshot.data()
-      const storedSettings = data.settings as Partial<GameSettings> | undefined
-      onRoom({
-        ...data,
-        settings: {
-          ...defaultGameSettings,
-          ...storedSettings,
-          customPattern:
-            storedSettings?.customPattern ?? defaultGameSettings.customPattern,
-        },
-        calledNumbers: data.calledNumbers ?? [],
-        currentNumber: data.currentNumber ?? null,
-        callingPaused: data.callingPaused ?? false,
-        winnerUid: data.winnerUid ?? null,
-        winnerUsername: data.winnerUsername ?? null,
-        winners:
-          data.winners ??
-          (data.winnerUid
-            ? [{ uid: data.winnerUid, username: data.winnerUsername }]
-            : []),
-        roundNumber: data.roundNumber ?? 1,
-      } as Room)
+      onRoom(normalizeRoomData(snapshot.data()))
     },
     onError,
   )
+}
+
+export async function getUserRoomsPage(
+  uid: string,
+  role: UserRoomMembership['role'],
+  pageSize: number,
+  cursor?: UserRoomPageCursor | null,
+): Promise<UserRoomsPage> {
+  const constraints: QueryConstraint[] = [
+    where('role', '==', role),
+    orderBy('updatedAt', 'desc'),
+    limit(pageSize + 1),
+  ]
+  if (cursor) constraints.splice(2, 0, startAfter(cursor))
+
+  const membershipsSnapshot = await getDocs(
+    query(collection(db, 'users', uid, 'rooms'), ...constraints),
+  )
+  const roomResults = await Promise.all(
+    membershipsSnapshot.docs.map(async (membershipSnapshot) => {
+      const data = membershipSnapshot.data() as Partial<UserRoomMembership>
+      const code = data.code ?? membershipSnapshot.id
+      const roomSnapshot = await getDoc(doc(db, 'rooms', code))
+      if (!roomSnapshot.exists()) return null
+
+      return {
+        cursor: membershipSnapshot,
+        room: {
+          ...normalizeRoomData(roomSnapshot.data()),
+          role,
+        },
+      }
+    }),
+  )
+  const existingRooms = roomResults.filter(
+    (result): result is { cursor: UserRoomPageCursor; room: UserRoom } =>
+      result !== null,
+  )
+  const pageRooms = existingRooms.slice(0, pageSize)
+
+  return {
+    rooms: pageRooms.map((result) => result.room),
+    nextCursor:
+      existingRooms.length > pageSize
+        ? pageRooms[pageRooms.length - 1].cursor
+        : null,
+  }
 }
 
 export function subscribeToRoundHistory(
@@ -558,8 +680,6 @@ export async function leaveRoom(
   code: string,
   uid: string,
   isHost: boolean,
-  playerUids: string[],
-  roundNumbers: number[],
 ) {
   if (!isHost) {
     const roomRef = doc(db, 'rooms', code)
@@ -583,13 +703,50 @@ export async function leaveRoom(
     return
   }
 
+  const roomRef = doc(db, 'rooms', code)
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(roomRef)
+    if (!snapshot.exists()) throw new RoomError('not-found')
+    const room = snapshot.data() as Room
+    if (room.hostUid !== uid) throw new RoomError('not-host')
+
+    transaction.update(doc(roomRef, 'players', uid), {
+      connectionState: 'offline',
+      disconnectedAt: serverTimestamp(),
+    })
+  })
+}
+
+export async function deleteRoom(
+  code: string,
+  hostUid: string,
+) {
+  const roomRef = doc(db, 'rooms', code)
+  const [playersSnapshot, roundsSnapshot] = await Promise.all([
+    getDocs(collection(roomRef, 'players')),
+    getDocs(collection(roomRef, 'rounds')),
+  ])
+
   const batch = writeBatch(db)
-  for (const playerUid of playerUids) {
-    batch.delete(doc(db, 'rooms', code, 'players', playerUid))
+  for (const playerSnapshot of playersSnapshot.docs) {
+    batch.delete(playerSnapshot.ref)
+    batch.delete(userRoomRef(playerSnapshot.id, code))
   }
-  for (const roundNumber of roundNumbers) {
-    batch.delete(doc(db, 'rooms', code, 'rounds', String(roundNumber)))
+  for (const roundSnapshot of roundsSnapshot.docs) {
+    batch.delete(roundSnapshot.ref)
   }
-  batch.delete(doc(db, 'rooms', code))
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(roomRef)
+    if (!snapshot.exists()) throw new RoomError('not-found')
+    const room = snapshot.data() as Room
+    if (room.hostUid !== hostUid) throw new RoomError('not-host')
+  })
+
+  batch.delete(roomRef)
   await batch.commit()
+}
+
+export async function deleteSavedRoom(code: string, uid: string) {
+  await deleteDoc(userRoomRef(uid, code))
 }

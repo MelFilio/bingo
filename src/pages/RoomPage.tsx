@@ -63,6 +63,12 @@ const patternLabels: Record<WinPattern, string> = {
   custom: 'Custom',
 }
 
+const segmentedControl =
+  'grid gap-1 rounded-[10px] bg-surface-soft p-1'
+
+const segmentedOption =
+  'grid min-h-[38px] cursor-pointer place-items-center rounded-[7px] px-2 py-[5px] text-center text-xs font-bold text-muted peer-checked:bg-surface peer-checked:text-primary peer-checked:shadow-[0_1px_5px_rgba(33,54,42,.09)] peer-disabled:cursor-not-allowed peer-disabled:opacity-65 peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus/50'
+
 export function RoomPage({ code, onLeave }: RoomPageProps) {
   const { user, profile } = useAuth()
   const [room, setRoom] = useState<Room | null>(null)
@@ -472,8 +478,6 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
         code,
         user.uid,
         hostIsLeaving,
-        players.map((player) => player.uid),
-        roundHistory.map((round) => round.roundNumber),
       )
       setConfirmingClose(false)
       onLeave()
@@ -601,9 +605,10 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
 
       <ConfirmDialog
         open={confirmingClose}
-        title="Close this room?"
-        description="All players will be removed and this room code will stop working. This action cannot be undone."
+        title="Close room view?"
+        description="This room will stay available from your room list, and you can open it again from the homepage."
         confirmLabel="Close room"
+        loadingLabel="Closing room"
         loading={leaving}
         onCancel={() => setConfirmingClose(false)}
         onConfirm={() => void performLeave(true)}
@@ -777,7 +782,7 @@ function WaitingRoom({
                 <legend className="mb-[9px] text-[13px] font-bold text-text">
                   Winning pattern
                 </legend>
-                <div className="grid grid-cols-3 gap-1 rounded-[10px] bg-surface-soft p-1 max-[480px]:grid-cols-1">
+                <div className={cn(segmentedControl, 'grid-cols-3 max-[480px]:grid-cols-1')}>
                   {(Object.keys(patternLabels) as WinPattern[]).map((pattern) => (
                     <label key={pattern}>
                       <input
@@ -789,7 +794,7 @@ function WaitingRoom({
                         onChange={() => onSettingsChange({ ...settings, winPattern: pattern })}
                         disabled={savingSettings}
                       />
-                      <span className="grid min-h-[38px] place-items-center rounded-[7px] px-2 py-[5px] text-center text-xs font-bold text-muted shadow-none peer-checked:bg-surface peer-checked:text-primary peer-checked:shadow-[0_1px_5px_rgba(33,54,42,.09)] peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus/50">
+                      <span className={segmentedOption}>
                         {patternLabels[pattern]}
                       </span>
                     </label>
@@ -836,7 +841,7 @@ function WaitingRoom({
                 <legend className="mb-[9px] text-[13px] font-bold text-text">
                   Cards per player
                 </legend>
-                <div className="grid grid-cols-3 gap-1 rounded-[10px] bg-surface-soft p-1 max-[480px]:grid-cols-1">
+                <div className={cn(segmentedControl, 'grid-cols-3 max-[480px]:grid-cols-1')}>
                   {([1, 2, 3] as const).map((cardCount) => (
                     <label key={cardCount}>
                       <input
@@ -848,7 +853,7 @@ function WaitingRoom({
                         onChange={() => onSettingsChange({ ...settings, cardCount })}
                         disabled={savingSettings}
                       />
-                      <span className="grid min-h-[38px] place-items-center rounded-[7px] px-2 py-[5px] text-center text-xs font-bold text-muted peer-checked:bg-surface peer-checked:text-primary peer-checked:shadow-[0_1px_5px_rgba(33,54,42,.09)] peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus/50">
+                      <span className={segmentedOption}>
                         {cardCount} {cardCount === 1 ? 'card' : 'cards'}
                       </span>
                     </label>
@@ -860,7 +865,7 @@ function WaitingRoom({
                 <legend className="mb-[9px] text-[13px] font-bold text-text">
                   Host role
                 </legend>
-                <div className="grid grid-cols-2 gap-1 rounded-[10px] bg-surface-soft p-1">
+                <div className={cn(segmentedControl, 'grid-cols-2')}>
                   {[
                     { label: 'Host gets card', value: true },
                     { label: 'Host only', value: false },
@@ -879,7 +884,7 @@ function WaitingRoom({
                         }
                         disabled={savingSettings}
                       />
-                      <span className="grid min-h-[38px] place-items-center rounded-[7px] px-2 py-[5px] text-center text-xs font-bold text-muted peer-checked:bg-surface peer-checked:text-primary peer-checked:shadow-[0_1px_5px_rgba(33,54,42,.09)] peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus/50">
+                      <span className={segmentedOption}>
                         {option.label}
                       </span>
                     </label>
@@ -891,7 +896,7 @@ function WaitingRoom({
                 <legend className="mb-[9px] text-[13px] font-bold text-text">
                   Number calling
                 </legend>
-                <div className="grid grid-cols-2 gap-1 rounded-[10px] bg-surface-soft p-1">
+                <div className={cn(segmentedControl, 'grid-cols-2')}>
                   {(['manual', 'automatic'] as CallMode[]).map((mode) => (
                     <label key={mode}>
                       <input
@@ -903,7 +908,7 @@ function WaitingRoom({
                         onChange={() => onSettingsChange({ ...settings, callMode: mode })}
                         disabled={savingSettings}
                       />
-                      <span className="grid min-h-[38px] place-items-center rounded-[7px] px-2 py-[5px] text-center text-xs font-bold text-muted peer-checked:bg-surface peer-checked:text-primary peer-checked:shadow-[0_1px_5px_rgba(33,54,42,.09)] peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus/50">
+                      <span className={segmentedOption}>
                         {mode === 'manual' ? 'Manual' : 'Automatic'}
                       </span>
                     </label>
@@ -1161,35 +1166,27 @@ function GameBoard({
 
           {room.status === 'playing' && player?.status === 'active' && playerHasCard && (
             <div className="mt-[-4px] mb-[22px] flex items-center justify-between gap-4 rounded-sm border border-border bg-[#fafcf9] p-3 max-[480px]:flex-col max-[480px]:items-stretch">
-              <div
-                className="grid min-w-[250px] grid-cols-2 gap-1 rounded-[10px] bg-surface-soft p-1 max-[480px]:min-w-0"
-                aria-label="Card marking mode"
-              >
-                <button
-                  className={cn(
-                    'min-h-9 rounded-[7px] border-0 bg-transparent px-2 py-[5px] text-xs font-bold text-muted',
-                    markMode === 'automatic' &&
-                      'bg-surface text-primary shadow-[0_1px_5px_rgba(33,54,42,.09)]',
-                  )}
-                  type="button"
-                  onClick={() => onMarkModeChange('automatic')}
-                  aria-pressed={markMode === 'automatic'}
-                >
-                  Automatic marks
-                </button>
-                <button
-                  className={cn(
-                    'min-h-9 rounded-[7px] border-0 bg-transparent px-2 py-[5px] text-xs font-bold text-muted',
-                    markMode === 'manual' &&
-                      'bg-surface text-primary shadow-[0_1px_5px_rgba(33,54,42,.09)]',
-                  )}
-                  type="button"
-                  onClick={() => onMarkModeChange('manual')}
-                  aria-pressed={markMode === 'manual'}
-                >
-                  Manual marks
-                </button>
-              </div>
+              <fieldset className="min-w-[250px] border-0 p-0 max-[480px]:min-w-0">
+                <legend className="sr-only">Card marking mode</legend>
+                <div className={cn(segmentedControl, 'grid-cols-2')}>
+                  {([
+                    { label: 'Automatic marks', value: 'automatic' },
+                    { label: 'Manual marks', value: 'manual' },
+                  ] as const).map((option) => (
+                    <label key={option.value}>
+                      <input
+                        className="peer sr-only"
+                        type="radio"
+                        name="mark-mode"
+                        value={option.value}
+                        checked={markMode === option.value}
+                        onChange={() => onMarkModeChange(option.value)}
+                      />
+                      <span className={segmentedOption}>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               {markMode === 'manual' && (
                 <p
                   className={cn(
@@ -1346,37 +1343,27 @@ function GameBoard({
 
           {isHost && room.status === 'playing' && (
             <div className="mt-6 grid gap-2.5">
-              <div
-                className="grid grid-cols-2 gap-1 rounded-[10px] bg-surface-soft p-1"
-                aria-label="Calling mode"
-              >
-                <button
-                  className={cn(
-                    'min-h-9 rounded-[7px] border-0 bg-transparent px-2 py-[5px] text-xs font-bold text-muted disabled:cursor-not-allowed disabled:opacity-65',
-                    room.settings.callMode === 'manual' &&
-                      'bg-surface text-primary shadow-[0_1px_5px_rgba(33,54,42,.09)]',
-                  )}
-                  type="button"
-                  onClick={() => onCallModeChange('manual')}
-                  disabled={updatingCallControls}
-                  aria-pressed={room.settings.callMode === 'manual'}
-                >
-                  Manual
-                </button>
-                <button
-                  className={cn(
-                    'min-h-9 rounded-[7px] border-0 bg-transparent px-2 py-[5px] text-xs font-bold text-muted disabled:cursor-not-allowed disabled:opacity-65',
-                    room.settings.callMode === 'automatic' &&
-                      'bg-surface text-primary shadow-[0_1px_5px_rgba(33,54,42,.09)]',
-                  )}
-                  type="button"
-                  onClick={() => onCallModeChange('automatic')}
-                  disabled={updatingCallControls}
-                  aria-pressed={room.settings.callMode === 'automatic'}
-                >
-                  Automatic
-                </button>
-              </div>
+              <fieldset className="border-0 p-0">
+                <legend className="sr-only">Calling mode</legend>
+                <div className={cn(segmentedControl, 'grid-cols-2')}>
+                  {(['manual', 'automatic'] as CallMode[]).map((mode) => (
+                    <label key={mode}>
+                      <input
+                        className="peer sr-only"
+                        type="radio"
+                        name="active-call-mode"
+                        value={mode}
+                        checked={room.settings.callMode === mode}
+                        onChange={() => onCallModeChange(mode)}
+                        disabled={updatingCallControls}
+                      />
+                      <span className={segmentedOption}>
+                        {mode === 'manual' ? 'Manual' : 'Automatic'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
 
               <button
                 className={cn(
