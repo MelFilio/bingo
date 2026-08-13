@@ -17,6 +17,9 @@ import {
   callNextNumber,
   claimBingo,
   leaveRoom,
+  markRoomPlayerOffline,
+  markRoomPlayerOnline,
+  pauseForDisconnectedHost,
   rerollCards,
   restartGame,
   setCallingPaused,
@@ -26,6 +29,9 @@ import {
   subscribeToRoom,
   updateGameSettings,
   updateCallControls,
+  updateRoomPlayerHeartbeat,
+  roomPresenceHeartbeatMs,
+  roomPresenceStaleMs,
   type Room,
   type RoomPlayer,
   type RoundHistory,
@@ -79,9 +85,19 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
   const [markMode, setMarkMode] = useState<MarkMode>('automatic')
   const [manualMarks, setManualMarks] = useState<number[]>([])
   const [markingReady, setMarkingReady] = useState(false)
+  const [presenceNow, setPresenceNow] = useState(() => Date.now())
+  const hostPauseRequestedRef = useRef(false)
 
   const isHost = room?.hostUid === user?.uid
   const currentPlayer = players.find((player) => player.uid === user?.uid)
+  const hostPlayer = players.find((player) => player.uid === room?.hostUid)
+  const hostLastSeenAt = hostPlayer?.lastSeenAt?.toMillis()
+  const hostIsDisconnected = Boolean(
+    room?.status === 'playing' &&
+      hostPlayer &&
+      (hostPlayer.connectionState === 'offline' ||
+        (hostLastSeenAt && presenceNow - hostLastSeenAt > roomPresenceStaleMs)),
+  )
   const isRoomMember = Boolean(currentPlayer)
   const currentPlayerHasCard = Boolean(
     room &&
@@ -147,6 +163,63 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
       unsubscribePlayers()
     }
   }, [code])
+
+  useEffect(() => {
+    if (!user || !profile?.username) return
+    const username = profile.username
+    let active = true
+
+    const markOnline = () => {
+      void markRoomPlayerOnline(code, {
+        uid: user.uid,
+        username,
+      }).catch(() => {
+        if (active) {
+          setError('We could not reconnect you to this room. Refresh and try again.')
+        }
+      })
+    }
+    const handleOnline = () => markOnline()
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') markOnline()
+    }
+
+    markOnline()
+    window.addEventListener('online', handleOnline)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      active = false
+      window.removeEventListener('online', handleOnline)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [code, profile?.username, user])
+
+  useEffect(() => {
+    if (!user || !isHost) return
+
+    const sendHeartbeat = () => {
+      void updateRoomPlayerHeartbeat(code, user.uid).catch(() => undefined)
+    }
+    const markOffline = () => {
+      void markRoomPlayerOffline(code, user.uid).catch(() => undefined)
+    }
+
+    sendHeartbeat()
+    const heartbeat = window.setInterval(sendHeartbeat, roomPresenceHeartbeatMs)
+    window.addEventListener('offline', markOffline)
+
+    return () => {
+      window.clearInterval(heartbeat)
+      window.removeEventListener('offline', markOffline)
+      markOffline()
+    }
+  }, [code, isHost, user])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setPresenceNow(Date.now()), 5_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (!isRoomMember) return
@@ -216,6 +289,19 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
     return () => window.clearTimeout(timer)
   }, [code, isHost, room, user])
 
+  useEffect(() => {
+    if (!room || !user || isHost || !hostIsDisconnected || room.callingPaused) {
+      if (!hostIsDisconnected) hostPauseRequestedRef.current = false
+      return
+    }
+    if (hostPauseRequestedRef.current) return
+
+    hostPauseRequestedRef.current = true
+    void pauseForDisconnectedHost(code, user.uid).catch(() => {
+      hostPauseRequestedRef.current = false
+    })
+  }, [code, hostIsDisconnected, isHost, room, user])
+
   async function copyCode() {
     try {
       await navigator.clipboard.writeText(code)
@@ -277,6 +363,12 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
         user.uid,
         players
           .filter((player) => player.status === 'waiting')
+          .map((player) => player.uid),
+        players
+          .filter(
+            (player) =>
+              player.uid !== user.uid && player.connectionState === 'offline',
+          )
           .map((player) => player.uid),
       )
       setConfirmingRestart(false)
@@ -448,6 +540,15 @@ export function RoomPage({ code, onLeave }: RoomPageProps) {
             role="alert"
           >
             {error}
+          </div>
+        )}
+        {hostIsDisconnected && (
+          <div
+            className="mb-6 rounded-sm border border-[#e2d29d] bg-[#fff9e7] px-4 py-3.5 text-sm font-semibold text-[#6c5318]"
+            role="status"
+          >
+            The host disconnected, so number calling is paused until the host
+            returns.
           </div>
         )}
 
@@ -2002,17 +2103,24 @@ function PlayersList({ players, hostUid }: { players: RoomPlayer[]; hostUid: str
               <span className={avatar} aria-hidden="true">
                 {player.username.charAt(0).toUpperCase()}
               </span>
-              <strong>@{player.username}</strong>
+              <strong className="min-w-0 truncate">@{player.username}</strong>
               {player.uid === hostUid && (
                 <span className="rounded-full bg-[#e8f0e1] px-2 py-1 text-[11px] font-bold text-[#35614c]">
                   Host
                 </span>
               )}
-              {player.uid === user?.uid && (
-                <span className="ml-auto rounded-full bg-surface-soft px-2 py-1 text-[11px] font-bold text-muted">
-                  You
-                </span>
-              )}
+              <span className="ml-auto flex flex-wrap justify-end gap-1.5">
+                {player.connectionState === 'offline' && (
+                  <span className="rounded-full bg-[#fff9e7] px-2 py-1 text-[11px] font-bold text-[#6c5318]">
+                    Offline
+                  </span>
+                )}
+                {player.uid === user?.uid && (
+                  <span className="rounded-full bg-surface-soft px-2 py-1 text-[11px] font-bold text-muted">
+                    You
+                  </span>
+                )}
+              </span>
             </li>
           ))}
         </ul>

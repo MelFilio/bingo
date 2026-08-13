@@ -132,6 +132,13 @@ service cloud.firestore {
                                    'startedAt', 'finishedAt', 'updatedAt']))
                       ||
                       (resource.data.status == 'playing'
+                       && exists(/databases/$(database)/documents/rooms/$(roomCode)/players/$(request.auth.uid))
+                       && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['callingPaused', 'updatedAt'])
+                       && resource.data.callingPaused == false
+                       && request.resource.data.callingPaused == true)
+                      ||
+                      (resource.data.status == 'playing'
                        && request.resource.data.status == 'finished'
                        && request.resource.data.winnerUid == request.auth.uid
                        && request.resource.data.winnerUsername
@@ -150,11 +157,16 @@ service cloud.firestore {
         allow create: if request.auth != null
                       && playerId == request.auth.uid
                       && request.resource.data.keys().hasOnly([
-                        'uid', 'username', 'status', 'cards', 'joinedAt'
+                        'uid', 'username', 'status', 'cards',
+                        'connectionState', 'lastSeenAt', 'disconnectedAt',
+                        'joinedAt'
                       ])
                       && request.resource.data.uid == request.auth.uid
                       && request.resource.data.username
                          == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username
+                      && request.resource.data.connectionState == 'online'
+                      && request.resource.data.lastSeenAt is timestamp
+                      && request.resource.data.disconnectedAt == null
                       && (
                         (getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.status
                            == 'waiting'
@@ -188,6 +200,21 @@ service cloud.firestore {
                               request.resource.data.cards,
                               get(/databases/$(database)/documents/rooms/$(roomCode)).data.settings.cardCount
                             ))
+                        ||
+                        (request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly([
+                            'username', 'connectionState', 'lastSeenAt',
+                            'disconnectedAt'
+                          ])
+                         && request.resource.data.username
+                            == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username
+                         && request.resource.data.connectionState in [
+                           'online', 'offline'
+                         ]
+                         && (request.resource.data.lastSeenAt is timestamp
+                             || request.resource.data.lastSeenAt == resource.data.lastSeenAt)
+                         && (request.resource.data.disconnectedAt is timestamp
+                             || request.resource.data.disconnectedAt == null))
                          ))
                         ||
                         (getAfter(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid

@@ -1,12 +1,13 @@
 import {
   collection,
-  deleteDoc,
   doc,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
+  Timestamp,
+  updateDoc,
   writeBatch,
   type FirestoreError,
   type Unsubscribe,
@@ -53,6 +54,9 @@ export interface RoomPlayer {
   username: string
   cards: PlayerCard[]
   status: 'active' | 'waiting'
+  connectionState: 'online' | 'offline'
+  lastSeenAt: Timestamp | null
+  disconnectedAt: Timestamp | null
 }
 
 export interface PlayerCard {
@@ -78,6 +82,9 @@ interface PlayerIdentity {
   uid: string
   username: string
 }
+
+export const roomPresenceHeartbeatMs = 10_000
+export const roomPresenceStaleMs = 30_000
 
 function createCards(count: GameSettings['cardCount']) {
   return Array.from({ length: count }, () => ({ cells: createBingoCard() }))
@@ -114,6 +121,9 @@ export async function createRoom(player: PlayerIdentity) {
         username: player.username,
         cards: createCards(defaultGameSettings.cardCount),
         status: 'active',
+        connectionState: 'online',
+        lastSeenAt: serverTimestamp(),
+        disconnectedAt: null,
         joinedAt: serverTimestamp(),
       })
       return true
@@ -136,8 +146,16 @@ export async function joinRoom(code: string, player: PlayerIdentity) {
     ])
 
     if (!roomSnapshot.exists()) throw new RoomError('not-found')
-    if (playerSnapshot.exists()) return
     const room = roomSnapshot.data() as Room
+    if (playerSnapshot.exists()) {
+      transaction.update(playerRef, {
+        username: player.username,
+        connectionState: 'online',
+        lastSeenAt: serverTimestamp(),
+        disconnectedAt: null,
+      })
+      return
+    }
 
     transaction.set(playerRef, {
       uid: player.uid,
@@ -146,8 +164,62 @@ export async function joinRoom(code: string, player: PlayerIdentity) {
         room.settings?.cardCount ?? 1,
       ),
       status: room.status === 'waiting' ? 'active' : 'waiting',
+      connectionState: 'online',
+      lastSeenAt: serverTimestamp(),
+      disconnectedAt: null,
       joinedAt: serverTimestamp(),
     })
+  })
+}
+
+export async function markRoomPlayerOnline(code: string, player: PlayerIdentity) {
+  const roomRef = doc(db, 'rooms', code)
+  const playerRef = doc(roomRef, 'players', player.uid)
+
+  await runTransaction(db, async (transaction) => {
+    const [roomSnapshot, playerSnapshot] = await Promise.all([
+      transaction.get(roomRef),
+      transaction.get(playerRef),
+    ])
+
+    if (!roomSnapshot.exists()) throw new RoomError('not-found')
+    const room = roomSnapshot.data() as Room
+
+    if (!playerSnapshot.exists()) {
+      transaction.set(playerRef, {
+        uid: player.uid,
+        username: player.username,
+        cards: createCards(room.settings?.cardCount ?? 1),
+        status: room.status === 'waiting' ? 'active' : 'waiting',
+        connectionState: 'online',
+        lastSeenAt: serverTimestamp(),
+        disconnectedAt: null,
+        joinedAt: serverTimestamp(),
+      })
+      return
+    }
+
+    transaction.update(playerRef, {
+      username: player.username,
+      connectionState: 'online',
+      lastSeenAt: serverTimestamp(),
+      disconnectedAt: null,
+    })
+  })
+}
+
+export async function updateRoomPlayerHeartbeat(code: string, playerUid: string) {
+  await updateDoc(doc(db, 'rooms', code, 'players', playerUid), {
+    connectionState: 'online',
+    lastSeenAt: serverTimestamp(),
+    disconnectedAt: null,
+  })
+}
+
+export async function markRoomPlayerOffline(code: string, playerUid: string) {
+  await updateDoc(doc(db, 'rooms', code, 'players', playerUid), {
+    connectionState: 'offline',
+    disconnectedAt: serverTimestamp(),
   })
 }
 
@@ -226,6 +298,29 @@ export async function setCallingPaused(
   })
 }
 
+export async function pauseForDisconnectedHost(code: string, requesterUid: string) {
+  const roomRef = doc(db, 'rooms', code)
+  const requesterRef = doc(roomRef, 'players', requesterUid)
+
+  await runTransaction(db, async (transaction) => {
+    const [roomSnapshot, requesterSnapshot] = await Promise.all([
+      transaction.get(roomRef),
+      transaction.get(requesterRef),
+    ])
+    if (!roomSnapshot.exists()) throw new RoomError('not-found')
+    if (!requesterSnapshot.exists()) throw new RoomError('not-found')
+
+    const room = roomSnapshot.data() as Room
+    if (room.status !== 'playing') throw new RoomError('not-playing')
+    if (room.callingPaused) return
+
+    transaction.update(roomRef, {
+      callingPaused: true,
+      updatedAt: serverTimestamp(),
+    })
+  })
+}
+
 export async function rerollCards(code: string, playerUid: string) {
   const roomRef = doc(db, 'rooms', code)
   const playerRef = doc(roomRef, 'players', playerUid)
@@ -243,7 +338,8 @@ export async function rerollCards(code: string, playerUid: string) {
 export async function restartGame(
   code: string,
   hostUid: string,
-  playerUids: string[],
+  waitingPlayerUids: string[],
+  removedPlayerUids: string[] = [],
 ) {
   const roomRef = doc(db, 'rooms', code)
   await runTransaction(db, async (transaction) => {
@@ -264,10 +360,13 @@ export async function restartGame(
         room.status === 'finished' ? (room.roundNumber ?? 1) + 1 : room.roundNumber,
       updatedAt: serverTimestamp(),
     })
-    for (const playerUid of playerUids) {
+    for (const playerUid of waitingPlayerUids) {
       transaction.update(doc(roomRef, 'players', playerUid), {
         status: 'active',
       })
+    }
+    for (const playerUid of removedPlayerUids) {
+      transaction.delete(doc(roomRef, 'players', playerUid))
     }
   })
 }
@@ -444,6 +543,9 @@ export function subscribeToPlayers(
             cards:
               data.cards ?? (legacyCard ? [{ cells: legacyCard }] : []),
             status: data.status ?? 'active',
+            connectionState: data.connectionState ?? 'online',
+            lastSeenAt: data.lastSeenAt ?? null,
+            disconnectedAt: data.disconnectedAt ?? null,
           } as RoomPlayer
         }),
       )
@@ -460,7 +562,24 @@ export async function leaveRoom(
   roundNumbers: number[],
 ) {
   if (!isHost) {
-    await deleteDoc(doc(db, 'rooms', code, 'players', uid))
+    const roomRef = doc(db, 'rooms', code)
+    const playerRef = doc(roomRef, 'players', uid)
+
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(roomRef)
+      if (!snapshot.exists()) throw new RoomError('not-found')
+      const room = snapshot.data() as Room
+
+      if (room.status === 'waiting') {
+        transaction.delete(playerRef)
+        return
+      }
+
+      transaction.update(playerRef, {
+        connectionState: 'offline',
+        disconnectedAt: serverTimestamp(),
+      })
+    })
     return
   }
 
